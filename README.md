@@ -1,2 +1,2 @@
 # docs-dw-templates
-"Pretty Tools" backend (Azure Functions)
+VS Code docs-article-templates for DW projects
