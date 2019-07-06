@@ -21,9 +21,8 @@ CREATE PROCEDURE [{{destSchema}}].[select.{{loadTable}}]
 AS
 {{ header.comments (p.templateHeader.author, p.templateHeader.createdAt, 
   'Create external table ['+schemaName+'].['+loadTable+']') }}
--- T      	2019-05-08	SA	create template
 -- 
-DECLARE @location nvarchar(250) = CONCAT(N'/@restore/INX/', CONVERT(nvarchar(10), @date, 111),'/{{loadTable}}.orc');
+DECLARE @location nvarchar(250) = CONCAT(N'/@restore/', CONVERT(nvarchar(10), @date, 111),'/{{loadTable}}.orc');
 
 IF OBJECT_ID('[{{destSchema}}].[{{loadTable}}]') IS NOT NULL DROP EXTERNAL TABLE [{{destSchema}}].[{{loadTable}}] 
 DECLARE @sqlQuery nvarchar(max) = N'CREATE EXTERNAL TABLE [{{destSchema}}].[{{loadTable}}] (
@@ -40,7 +39,7 @@ DECLARE @sqlQuery nvarchar(max) = N'CREATE EXTERNAL TABLE [{{destSchema}}].[{{lo
     WITH (
     LOCATION = '''+@location+''',
     DATA_SOURCE = [bsDataSourceARC],
-    FILE_FORMAT = [FileFormatORC]
+    FILE_FORMAT = [fileFormatORC]
 )'
 
 EXECUTE sp_executesql @sqlQuery;
