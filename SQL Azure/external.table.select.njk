@@ -1,0 +1,47 @@
+{%- import 'header.njk' as header -%}
+{%- if p.metadata.loadSchema == 'testSchema' -%}{%- set schemaName = 'testSchema' -%}{%- else -%}{%- set schemaName = p.metadata.destSchema -%}{%- endif -%}
+{%- set objectName = p.metadata.objectName -%}
+{%- set loadSchema = p.metadata.loadSchema -%}
+{%- set loadTable = p.metadata.loadTable -%}
+{%- set loadColumns = p.metadata.loadColumns -%}
+{%- if loadSchema == 'testSchema' -%}{%- set spSchema = 'testSchema' -%}{%- else -%}{%- set spSchema = p.metadata.spSchema -%}{%- endif -%}
+{%- set spName = p.metadata.spName -%}
+{%- if loadSchema == 'testSchema' -%}{%- set destSchema = 'testSchema' -%}{%- else -%}{%- set destSchema = p.metadata.destSchema -%}{%- endif -%}
+{%- set destTable = p.metadata.destTable -%}
+{%- set destColumns = p.metadata.destColumns -%}
+{%- set strings = ['varchar', 'nvarchar'] -%}
+{%- set uids = ['uniqueidentifier'] -%}
+
+
+IF OBJECT_ID ('[{{destSchema}}].[select.{{loadTable}}]', 'P') IS NOT NULL DROP PROCEDURE [{{destSchema}}].[select.{{loadTable}}];
+GO
+
+CREATE PROCEDURE [{{destSchema}}].[select.{{loadTable}}]
+    @date   DATE
+AS
+{{ header.comments (p.templateHeader.author, p.templateHeader.createdAt, 
+  'Create external table ['+schemaName+'].['+loadTable+']') }}
+-- T      	2019-05-08	SA	create template
+-- 
+DECLARE @location nvarchar(250) = CONCAT(N'/@restore/INX/', CONVERT(nvarchar(10), @date, 111),'/{{loadTable}}.orc');
+
+IF OBJECT_ID('[{{destSchema}}].[{{loadTable}}]') IS NOT NULL DROP EXTERNAL TABLE [{{destSchema}}].[{{loadTable}}] 
+DECLARE @sqlQuery nvarchar(max) = N'CREATE EXTERNAL TABLE [{{destSchema}}].[{{loadTable}}] (
+    {%- for key in loadColumns %}
+    [{{key.name}}] {% if (key.dataType in uids) -%} [varchar](255){%- else -%} [{{key.dataType}}]{%- endif -%}
+    {# [{{key.dataType}}]  #}
+    {%- if (key.characterMaximumLength>0) -%} ({{-key.characterMaximumLength-}})
+    {%- elif (key.characterMaximumLength == -1) -%} (max)
+    {%- elif (key.numericPrecision > 0 and key.numericScale > 0) -%} ({{key.numericPrecision}},{{key.numericScale-}})
+    {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+    {{- ', ' if not loop.last -}}
+    {% endfor %}
+)
+    WITH (
+    LOCATION = '''+@location+''',
+    DATA_SOURCE = [bsDataSourceARC],
+    FILE_FORMAT = [FileFormatORC]
+)'
+
+EXECUTE sp_executesql @sqlQuery;
+

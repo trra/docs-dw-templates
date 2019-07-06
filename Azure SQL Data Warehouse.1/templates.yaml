@@ -1,5 +1,5 @@
 format: Azure SQL Data Warehouse
-version: 1.0.0
+version: 0.1.x
 templates:
   - name: "STAGE TABLE: Create Table"
     description: "Table: simple staging table"

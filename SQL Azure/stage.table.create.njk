@@ -1,8 +1,7 @@
 {%- set schemaName = p.metadata.destSchema -%}
 {%- set tableName = p.metadata.destTable -%}
 {%- set columns = p.metadata.destColumns -%}
-IF OBJECT_ID('[{{ schemaName }}].[{{ tableName }}]', 'U') IS NOT NULL
-    DROP TABLE [{{ schemaName }}].[{{ tableName }}]
+IF OBJECT_ID('[{{ schemaName }}].[{{ tableName }}]', 'U') IS NOT NULL DROP TABLE [{{ schemaName }}].[{{ tableName }}]
 GO
 
 CREATE TABLE [{{schemaName}}].[{{tableName}}] (
@@ -17,11 +16,6 @@ CREATE TABLE [{{schemaName}}].[{{tableName}}] (
     [sessionNo] [varchar](50) NULL,
     [packageName] [varchar](100) NULL,
     [loadDateTime] [datetime] NULL 
-)
-WITH
-(
-	DISTRIBUTION = ROUND_ROBIN,
-	HEAP
-)
+    )
 GO
 

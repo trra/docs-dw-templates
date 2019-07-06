@@ -1,0 +1,21 @@
+{%- set schemaName = p.metadata.destSchema -%}
+{%- set tableName = p.metadata.destTable -%}
+{%- set columns = p.metadata.destColumns -%}
+IF OBJECT_ID('[{{ schemaName }}].[{{ tableName }}]', 'U') IS NOT NULL DROP TABLE [{{ schemaName }}].[{{ tableName }}]
+GO
+
+CREATE TABLE [{{schemaName}}].[{{tableName}}] (
+    {%- for key in columns %}
+    [{{key.name}}] [{{key.dataType}}] 
+    {%- if (key.characterMaximumLength>0) -%} ({{-key.characterMaximumLength-}})
+    {%- elif (key.characterMaximumLength == -1) -%} (max)
+    {%- elif (key.numericPrecision > 0 and key.numericScale > 0) -%} ({{key.numericPrecision}}.{{key.numericScale-}})
+    {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+    {{- "," -}}
+    {% endfor %}
+    [sessionNo] [varchar](50) NULL,
+    [packageName] [varchar](100) NULL,
+    [loadDateTime] [datetime] NULL 
+    ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
+GO
+
