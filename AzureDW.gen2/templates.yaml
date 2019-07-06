@@ -1,0 +1,29 @@
+format: Azure Data Warehouse
+version: 1.0.0
+templates:
+  - name: "STAGE TABLE: Create Table"
+    description: "Table: simple staging table"
+    templateFileName: stage.table.create.njk
+    outputFileName: /Stage/Table/{destSchema}.stage_{ObjectName}.sql
+    destSchema: stg
+    destTable: stage_{ObjectName}
+    objectNameMask: 
+    wizardQuestions: 
+      - Select Source Table
+      - Select Source Columns
+      - Define Object Name
+      - Set Column Name format
+  - name: "EXTERNAL TABLE: select External Table"
+    description: "Procedure: select External Table"
+    templateFileName: external.table.select.njk
+    outputFileName: /External/SProc/{spSchema}.{spName}.sql
+    destSchema: ext
+    destTable: {ObjectName}
+    spSchema: ext
+    spName: select.{ObjectName}
+    objectNameMask: /raw_/g
+    wizardQuestions: 
+      - Select Source Table
+      - Select Source Columns
+      - Define Object Name
+            
