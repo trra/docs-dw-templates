@@ -1,29 +1,47 @@
+defaultSettings: &defaults
+  author:
+  description: MIT licence
+  createdAt: { currentDateLong }
+  version: ~0.1.0
+  settings:
+    - type: ColumnExclusionList
+      values:
+        - isRowCurrent
+        - rowChangeType
+        - rowHashType
+        - rowStartDate
+        - rowEndDate
+        - sessionNo
+        - packageName
+        - loadDateTime
+
 format: Azure SQL Data Warehouse
-version: 0.1.x
 templates:
-  - name: "STAGE TABLE: Create Table"
-    description: "Table: simple staging table"
+  - name: 'Stage: create table'
+    <<: *defaults
+    description: 'Create standard staging table'
     templateFileName: stage.table.create.njk
-    outputFileName: /Stage/Table/{destSchema}.stage_{ObjectName}.sql
-    destSchema: stg
+    outputFileName: /Stage/Table/{@DestSchema}.stage_{@ObjectName}.sql
+    destSchema: stage
     destTable: stage_{ObjectName}
-    objectNameMask: 
-    wizardQuestions: 
+    objectNameMask:
+    wizardQuestions:
       - Select Source Table
       - Select Source Columns
-      - Define Object Name
+      - { ObjectName }
+      - { DestSchema }
       - Set Column Name format
-  - name: "EXTERNAL TABLE: select External Table"
-    description: "Procedure: select External Table"
+  - name: 'External: select external table source file'
+    description: 'Dynamically assign a source blob file'
     templateFileName: external.table.select.njk
     outputFileName: /External/SProc/{spSchema}.{spName}.sql
     destSchema: ext
-    destTable: {ObjectName}
+    destTable: { ObjectName }
     spSchema: ext
     spName: select.{ObjectName}
     objectNameMask: /raw_/g
-    wizardQuestions: 
+    wizardQuestions:
       - Select Source Table
       - Select Source Columns
-      - Define Object Name
-            
+      - { ObjectName }
+      - { DestSchema }

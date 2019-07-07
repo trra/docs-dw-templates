@@ -1,16 +1,15 @@
 format: SQL Azure
-version: 0.1.x
+version: ~0.1.0
 templates:
-  - name: "STAGE TABLE: Create Table"
-    description: "Table: simple staging table"
+  - name: 'Stage: create table'
+    description: 'Create standard staging table'
     templateFileName: stage.table.create.njk
     outputFileName: /Stage/Table/{destSchema}.stage_{ObjectName}.sql
     destSchema: stg
     destTable: stage_{ObjectName}
-    objectNameMask: 
-    wizardQuestions: 
+    objectNameMask:
+    wizardQuestions:
       - Select Source Table
       - Select Source Columns
       - Define Object Name
       - Set Column Name format
-            
