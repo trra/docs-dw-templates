@@ -1,0 +1,91 @@
+controls:
+  - name: Object Name
+    tag: <objectName>
+    controlType: showInputBox
+    prompt: 'Destination Object Name'
+    placeHolder: 'Specify destination object name'
+
+  - name: Select Source Table
+    tag: <sourceTable>
+    controlType: showQuickPick
+    placeHolder: 'Select source table from the list'
+    matchOnDescription: true
+    canPickMany: false
+
+  - name: Select Source Columns
+    tag: <sourceColumns>
+    controlType: showQuickPick
+    placeHolder: 'Select source columns from the list'
+    matchOnDescription: false
+    canPickMany: true
+    columnExclusionList: true
+
+  - name: Select Key Columns
+    tag: <sourcePK>
+    controlType: showQuickPick
+    placeHolder: 'Select source PK column(s)'
+    matchOnDescription: false
+    canPickMany: true
+    columnExclusionList: true
+
+  - name: Destination Schema
+    tag: <destSchema>
+    controlType: showInputBox
+    prompt: 'Destination schema name'
+    placeHolder: 'Specify destination schema name'
+
+  - name: Destination Table
+    tag: <destTable>
+    controlType: showInputBox
+    prompt: 'Destination table name'
+    placeHolder: 'Specify destination table name'
+
+  - name: Select Destination Columns
+    tag: <destColumns>
+    controlType: showQuickPick
+    placeHolder: 'Select destination column names format'
+    matchOnDescription: false
+    canPickMany: true
+    columnExclusionList: true
+
+  - name: Destination Key Columns
+    tag: <destPK>
+    controlType: showQuickPick
+    placeHolder: 'Select destination PK column(s)'
+    matchOnDescription: false
+    canPickMany: true
+    columnExclusionList: true
+
+  - name: Select Column Format
+    tag: <columnFormat>
+    controlType: showQuickPick
+    values: ['none', 'camelCase', 'kebabCase', 'snakeCase', 'upperCase', 'startCase']
+    placeHolder: 'Select destination column names format'
+    matchOnDescription: true
+    canPickMany: false
+
+tags:
+  # Sequence Number. Use as part of destTable definition only.
+  # Generates the next numeric value which is greater than destTable maximum sequence number
+  - tag: <sequenceNo>
+    startWith: 0100
+    incrementBy: 0100
+    format: '0000'
+
+  # Current Date
+  - tag: <currentDate>
+    format: 'YYYY MM dd HH:mm:ss a'
+
+  # Exclusion Columns
+  - tag: <columnExclusionList>
+    values:
+      [
+        'isRowCurrent',
+        'rowChangeType',
+        'rowHashType',
+        'rowStartDate',
+        'rowEndDate',
+        'sessionNo',
+        'packageName',
+        'loadDateTime',
+      ]
