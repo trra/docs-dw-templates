@@ -1,15 +1,16 @@
 defaultSettings: &defaults
   author: '{USERDOMAIN}\\{USERNAME}'
   license: MIT License
-  createdAt: <currentDate>
   version: ~0.1.0
+  projectName: <projectName>
+  createdAt: <currentDate>
 
 format: Azure SQL Data Warehouse
 templates:
   - name: 'Stage: create table'
     <<: *defaults
     description: 'Create standard staging table'
-    templateFileName: stage.table.create.njk
+    templateFileName: Azure SQL Data Warehouse/stage.table.create.njk
     outputFileName: /Stage/Table/<destSchema>.<destTable>.sql
     destSchema: stage
     destTable: '{objectName}.{sequenceNo}'
@@ -23,7 +24,7 @@ templates:
   - name: 'External: select external table source file'
     <<: *defaults
     description: 'Dynamically assign a source blob file'
-    templateFileName: external.table.select.njk
+    templateFileName: Azure SQL Data Warehouse/external.table.select.njk
     outputFileName: /External/SProc/{spSchema}.{spName}.sql
     destSchema: ext
     destTable: '{objectName}'

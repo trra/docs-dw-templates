@@ -1,15 +1,16 @@
 defaultSettings: &defaults
   author: '{USERDOMAIN}\\{USERNAME}'
   license: MIT License
-  createdAt: <currentDate>
   version: ~0.1.0
+  projectName: <projectName>
+  createdAt: <currentDate>
 
 format: SQL Azure
 templates:
   - name: 'Stage: create table'
     <<: *defaults
     description: 'Create standard staging table'
-    templateFileName: stage.table.create.njk
+    templateFileName: SQL Azure/stage.table.create.njk
     outputFileName: /Stage/Table/<destSchema>.<destTable>.sql
     destSchema: stage
     destTable: '{objectName}.{sequenceNo}'
