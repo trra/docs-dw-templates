@@ -1,18 +1,26 @@
-{%- set schemaName = p.metadata.destSchema -%}
-{%- set tableName = p.metadata.destTable -%}
-{%- set columns = p.metadata.destColumns -%}
+{%- import 'macro.njk' as macro -%}
+{%- set schemaName = p.meta.destination.schemaName -%}
+{%- set tableName = p.meta.destination.tableName -%}
+{%- set columns = p.meta.destination.columns -%}
+{%- set integers = ['int', 'integer', 'numeric'] -%}
+{%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
+{%- set keyColumnName = p.meta.objectName+'Key' -%}
+{{ macro.comments (p,  
+  "Create staging table [{{schemaName}}].[{{tableName}}]" | render(p.meta.destination) | safe )  }}
+--
 IF OBJECT_ID('[{{ schemaName }}].[{{ tableName }}]', 'U') IS NOT NULL DROP TABLE [{{ schemaName }}].[{{ tableName }}]
 GO
 
 CREATE TABLE [{{schemaName}}].[{{tableName}}] (
+    [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
     {%- for key in columns %}
     [{{key.name}}] [{{key.dataType}}] 
-    {%- if (key.characterMaximumLength>0) -%} ({{-key.characterMaximumLength-}})
-    {%- elif (key.characterMaximumLength == -1) -%} (max)
-    {%- elif (key.numericPrecision > 0 and key.numericScale > 0) -%} ({{key.numericPrecision}}.{{key.numericScale-}})
+    {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+    {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
+    {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
     {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
     {{- "," -}}
-    {% endfor %}
+    {% endfor %}    
     [sessionNo] [varchar](50) NULL,
     [packageName] [varchar](100) NULL,
     [loadDateTime] [datetime] NULL 
