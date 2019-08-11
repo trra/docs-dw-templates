@@ -1,0 +1,26 @@
+{% macro scriptHeader (templateFileName) -%}
+-- ================================================
+-- ETL code generated using [{{ templateFileName }}] template file
+--
+-- This block of comments will not be included in the definition of the procedure.
+-- ================================================
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+{%- endmacro %}
+
+{% macro comments (p, description) -%}
+-- ********** Project: {{ p.settings.projectName }} **********
+-- {{ description }}
+-- Template: {{ p.settings.repoName }}
+-- FileName: {{ p.template.outputFileName }}
+-- 
+-- Author: {{ p.settings.author }}
+-- Created: {{ p.settings.createdAt }}
+-- Modified: {{ p.settings.authorInitials }} {{ p.settings.createdAt }}
+-- 
+-- HISTORY:
+-- PR     	Date      	By	Comments
+-- ----   	----------	---	---------------------------------------------------------
+{%- endmacro %}

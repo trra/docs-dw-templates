@@ -1,0 +1,298 @@
+{%- import 'macro.njk' as macro -%}
+{%- set objectName = p.meta.objectName -%}
+{%- set loadSchema = p.meta.loadSchema -%}
+{%- set loadTable = p.meta.loadTable -%}
+{%- set loadColumns = p.meta.loadColumns -%}
+{%- set loadColumnsPK = p.meta.loadColumnsPK -%}
+{%- set spSchema = p.meta.spSchema -%}
+{%- set spName = p.meta.spName -%}
+{%- set destSchema = p.meta.destSchema -%}
+{%- set destTable = p.meta.destTable -%}
+{%- set destColumns = p.meta.destColumns -%}
+{%- set destColumnsPK = p.meta.destColumnsPK -%}
+{%- set integers = ['int', 'integer', 'numeric'] -%}
+{%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
+{%- set keyColumnName = p.meta.objectName+'Key' -%}
+IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL  DROP PROCEDURE [{{spSchema}}].[{{spName}}];
+GO
+
+CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
+    @sessionNo   varchar(50),
+    @packageName varchar(100),
+    @scdDate     date
+AS
+{{ macro.comments (p,  
+  "Fetch data from source table [{{loadSchema}}].[{{loadTable}}]
+-- into 3NF SCD Type 2 table [{{destSchema}}].[{{destTable}}]
+-- Execution sample:
+-- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'GEO', NULL" | render(p.meta) | safe )  }}
+-- T      	2019-06-04	SA	updated scd2 unit tests and set sessionStatus in exception block
+-- T      	2019-05-06	SA	unified [dw] and [ods] column names 
+--
+SET NOCOUNT ON;
+DECLARE @objectCode varchar(250) = '{{destSchema}}.{{destTable}}' -- define destination object code 
+DECLARE @procName varchar(250)   = '{{spSchema}}.{{spName}}' -- current proc name - OBJECT_NAME(@@PROCID) is not yet supported
+
+DECLARE @rowsRead INT, @rowsWritten INT
+DECLARE @message varchar(1000)
+DECLARE @sessionStatus varchar(50)
+
+BEGIN TRY
+    -- add all manual dependencies here
+    EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{loadSchema}}.{{loadTable}}', @destObjectCode = @objectCode
+    -- always check for session status AFTER adding new dependencies
+    EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
+
+    IF @sessionStatus in ('Ready', 'Failed') BEGIN 
+        EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
+        -- ************ ETL code starts here ****************
+        -- perform action
+        
+        IF OBJECT_ID('[{{destSchema}}].[{{destTable}}]', 'U') IS NULL
+          CREATE TABLE [{{destSchema}}].[{{destTable}}] (
+              [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
+              {%- for key in loadColumns %}
+              [{{key.name}}] [{{key.dataType}}] 
+              {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+              {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
+              {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+              {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+              {{- "," -}}
+              {% endfor %}
+              scdCurrentFlag [varchar](1) NULL,
+              scdStartDate [datetime] NULL,
+              scdEndDate [datetime] NULL,
+              scdVersion [int] NULL,
+              scdDeletedFlag [varchar](1) NULL,
+              dwSessionNo [varchar](50) NULL,
+              dwPackageName [varchar](100) NULL,
+              dwUpdateDate [datetime] NULL
+          ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
+
+
+        DECLARE @now datetime = ndw.getLocalDateTime(getUtcDate())
+        SET @scdDate = isNull(@scdDate, @now)
+     
+        -- Create temp table to update existing records
+        IF OBJECT_ID('tempdb..[#ds2.1.{{loadSchema}}.{{loadTable}}]') IS NOT NULL DROP TABLE [#ds2.1.{{loadSchema}}.{{loadTable}}]
+        CREATE TABLE [#ds2.1.{{loadSchema}}.{{loadTable}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
+        AS SELECT AA.*
+        FROM (SELECT 
+            {% for key in loadColumns -%}[{{destColumns[loop.index0].name}}] = src.[{{key.name}}]{{-', ' if not loop.last -}}{% if (loop.index % 4) === 0 %}
+            {% endif -%}{%- endfor %}
+        FROM [{{loadSchema}}].[{{loadTable}}] src 
+        EXCEPT SELECT
+            {% for key in destColumns -%}[{{key.name}}]{{-', ' if not loop.last -}}{% if (loop.index % 4) === 0 %}
+            {% endif -%}{%- endfor %}
+        FROM [{{destSchema}}].[{{destTable}}]
+        WHERE @scdDate BETWEEN scdStartDate AND scdEndDate) AA 
+        INNER JOIN [{{ destSchema }}].[{{ destTable }}] UPD ON {%- for key in loadColumnsPK %} AA.{{key.name}} = UPD.{{key.name}}{{' AND' if not loop.last }}{%- endfor %}
+
+        UPDATE [{{destSchema}}].[{{destTable}}]
+        SET
+          scdCurrentFlag = 'N',
+          scdEndDate = @scdDate,
+          scdDeletedFlag = 'N',
+          dwSessionNo = @sessionNo,
+          dwPackageName = @packageName,
+          dwUpdateDate = @now
+        FROM [#ds2.1.{{loadSchema}}.{{loadTable}}] AA
+        WHERE {%- for key in loadColumnsPK %} AA.[{{key.name}}] = [{{destSchema}}].[{{destTable}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+
+        -- update deleted records 
+        UPDATE [{{destSchema}}].[{{destTable}}]
+        SET
+          scdCurrentFlag = 'N',
+          scdEndDate = @scdDate,
+          scdDeletedFlag = 'Y',
+          dwSessionNo = @sessionNo,
+          dwPackageName = @packageName,
+          dwUpdateDate = @now
+        WHERE NOT EXISTS (
+            SELECT 1 FROM [{{loadSchema}}].[{{loadTable}}] src
+            WHERE {%- for key in loadColumnsPK %} src.[{{key.name}}] = [{{destSchema}}].[{{destTable}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+            )
+
+        -- load new records
+        INSERT INTO [{{destSchema}}].[{{destTable}}] ( 
+            {% for key in destColumns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
+            {% endif -%}{%- endfor %}
+            scdCurrentFlag, scdStartDate, scdEndDate, scdVersion, scdDeletedFlag, 
+            dwSessionNo, dwPackageName, dwUpdateDate)
+        SELECT
+            {% for key in destColumns -%}
+            [{{destColumns[loop.index0].name}}] = src.[{{key.name}}],
+            {% endfor -%}
+            scdCurrentFlag = 'Y',
+            scdStartDate = @scdDate,
+            -- #custom-code: scdStartDate based on src.<startDate>
+            -- scdStartDate = CASE WHEN vers.[GUID] IS NULL AND src.<startDate> < @scdDate
+            --   THEN src.<startDate> ELSE @scdDate END,
+            scdEndDate = '9999-12-31 00:00:00.000',
+            scdVersion = CASE WHEN vers.[{{loadColumnsPK[0].name}}] IS NULL THEN 1 ELSE vers.scdVersion + 1 END,
+            scdDeletedFlag = 'N',
+            dwSessionNo = @sessionNo,
+            dwPackageName = @packageName,
+            dwUpdateDate = @now
+        FROM [{{loadSchema}}].[{{loadTable}}] src
+        LEFT OUTER JOIN ( --get last version
+          SELECT {% for key in loadColumnsPK -%}[{{key.name}}], {% endfor -%}
+            MAX(scdVersion) as scdVersion
+          FROM [{{destSchema}}].[{{destTable}}] 
+          GROUP BY {% for key in loadColumnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %}
+        ) AS vers
+        ON {%- for key in loadColumnsPK %} vers.[{{key.name}}] = src.[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+        LEFT JOIN [{{destSchema}}].[{{destTable}}] ds 
+        ON {%- for key in loadColumnsPK %} src.[{{key.name}}] = ds.[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+        AND ds.scdCurrentFlag='Y'
+        WHERE ds.[{{loadColumnsPK[0].name}}] IS NULL
+
+
+        -- update scdEndDate     
+        IF OBJECT_ID('tempdb..[#ds2.2.{{loadSchema}}.{{loadTable}}]') IS NOT NULL DROP TABLE [#ds2.2.{{loadSchema}}.{{loadTable}}]
+        CREATE TABLE [#ds2.2.{{loadSchema}}.{{loadTable}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
+        AS SELECT {% for key in loadColumnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %}, 
+          scdVersion, 
+          scdEndDate = DATEADD(s, -1, LEAD(scdStartDate) OVER (PARTITION BY {% for key in loadColumnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %} ORDER BY scdVersion)) 
+        FROM [{{destSchema}}].[{{destTable}}]
+
+        UPDATE [{{destSchema}}].[{{destTable}}]
+        SET
+          scdEndDate = ISNULL(DD.scdEndDate, 
+            CASE WHEN [{{destSchema}}].[{{destTable}}].scdCurrentFlag='Y' THEN '9999-12-31 00:00:00.000' ELSE [{{destSchema}}].[{{destTable}}].scdEndDate END),
+          dwSessionNo = @sessionNo,
+          dwPackageName = @packageName,
+          dwUpdateDate = @now
+        FROM [#ds2.2.{{loadSchema}}.{{loadTable}}] DD 
+        WHERE {%- for key in destColumnsPK %} DD.[{{key.name}}] = [{{destSchema}}].[{{destTable}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+          AND DD.scdVersion = [{{destSchema}}].[{{destTable}}].scdVersion 
+
+
+        -- ************ UnitTests ****************                
+
+        DECLARE @checkTotalQuantity varchar(250)
+        DECLARE @checkQuantityPK varchar(250)
+        DECLARE @checkQuantityLimit varchar(250)
+        DECLARE @checkNullPK varchar(250)
+        DECLARE @expectCountMin bigInt, @expectCountMax bigInt
+        EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
+        ;WITH 
+            Expect as (SELECT expectCount = count(*) FROM [{{loadSchema}}].[{{loadTable}}]),
+            Actual as (SELECT 
+                actualCount = count(*),
+                actualCountPK = COUNT(DISTINCT CONCAT_WS('~',{%- for key in loadColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) ),
+                actualNullPK = SUM( CASE WHEN {% for key in loadColumnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+                FROM [{{destSchema}}].[{{destTable}}]
+                WHERE scdCurrentFlag = 'Y')
+        SELECT 
+            @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
+            @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
+            @checkQuantityLimit = test.assertTrue(CONCAT('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
+                CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
+            @checkNullPK = test.assertEqualsInt('checkNullPK (PK has NULL values)', 0, actualNullPK),
+            @rowsRead = expectCount, @rowsWritten = actualCount
+        FROM Actual CROSS JOIN Expect
+
+        -- Info
+        PRINT @checkTotalQuantity
+        PRINT @checkQuantityPK
+        PRINT @checkQuantityLimit
+        
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
+
+        -- Warnings
+        SET @checkNullPK = REPLACE( @checkNullPK, 'TEST FAILED', 'WARNING!')
+        PRINT @checkNullPK
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkNullPK
+
+        -- Raise Errors
+        IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
+        IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
+        IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
+        IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
+        
+
+        
+        -- ************ SCD2 UnitTests ****************         
+
+        DECLARE @checkCurrentFlag varchar(250)
+        DECLARE @checkStartDate varchar(250)
+        DECLARE @checkOrphanRows varchar(250)
+
+        ;WITH 
+        S as (SELECT id = CONCAT_WS('~',{%- for key in destColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ), 
+            scdStartDate, scdEndDate, scdCurrentFlag 
+            FROM [{{destSchema}}].[{{destTable}}]),
+        TESTS AS (
+            SELECT curS.id, 
+                chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
+                cnt_orphan_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
+                chk_start_date = CASE WHEN ISNULL( DATEADD(s, 1, prevS.scdEndDate), curS.scdStartDate) = curS.scdStartDate THEN 0 ELSE 1 END
+            FROM S curS 
+            LEFT JOIN S prevS 
+                ON prevS.id = curS.id AND (curS.scdStartDate-0.01 BETWEEN prevS.scdStartDate AND prevS.scdEndDate)
+            LEFT JOIN (SELECT id, 
+                SUM(CASE WHEN (scdCurrentFlag = 'Y') THEN 1 ELSE 0 END) cnt_currentFlag,
+                SUM(CASE WHEN (@scdDate BETWEEN scdStartDate AND scdEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
+                FROM S GROUP BY id) chkCurFlag 
+                ON curS.id = chkCurFlag.id 
+            )  
+        -- DEBUG: select all failed records
+        -- SELECT * FROM TESTS WHERE chk_currentFlag != 0 OR cnt_orphan_rows != 0 OR chk_start_date != 0     
+        SELECT 
+            @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
+            @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
+            @checkOrphanRows = test.assertEqualsInt('checkOrphanRows (cnt_currentFlag = 0 & cnt_currentPeriod = 0)', 0, sum(cnt_orphan_rows))
+        FROM TESTS
+
+        -- Info
+        PRINT @checkCurrentFlag
+        PRINT @checkStartDate
+        
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
+        
+        -- Warnings
+        SET @checkOrphanRows = REPLACE( @checkOrphanRows, 'TEST FAILED', 'WARNING!')
+        PRINT @checkOrphanRows
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkOrphanRows
+
+        -- Raise Errors
+        IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
+        IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
+
+        SET @sessionStatus = 'Succeeded'
+    
+    
+        -- ************ Finalize transformation here ****************                
+        IF OBJECT_ID('tempdb..[#ds2.1.{{loadSchema}}.{{loadTable}}]') IS NOT NULL DROP TABLE [#ds2.1.{{loadSchema}}.{{loadTable}}]
+        IF OBJECT_ID('tempdb..[#ds2.2.{{loadSchema}}.{{loadTable}}]') IS NOT NULL DROP TABLE [#ds2.2.{{loadSchema}}.{{loadTable}}]
+        
+
+
+        -- ************ ETL code ends here ****************                
+
+        SET @message = etl.setLogMessage('Dimension', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+        -- change object status to @sessionStatus
+        EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+    END 
+    ELSE BEGIN -- else skip this step
+        SET @message = etl.setLogMessage('Dimension', 'Skip this step', NULL, @sessionStatus)
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    END
+END TRY
+BEGIN CATCH
+    -- change object status to 'Failed'
+    SET @sessionStatus = 'Failed'
+    SET @message = etl.setLogMessage('Dimension', 'Execution failed', 
+                [etl].[setLogErrorMessage] ( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
+                @sessionStatus)
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
+    RAISERROR (@message, 16, 1)
+END CATCH

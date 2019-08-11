@@ -18,8 +18,13 @@ templates:
     wizardQuestions:
       - Select Source Table
       - Select Source Columns
+      - Select Source PK Columns
       - Object Name
+      - Procedure Name
+      - Select Destination Table
       - Destination Schema
+      - Destination Table
+      - Select Destination Columns
       - Set Column Name format
   - name: 'External: select external table source file'
     <<: *defaults
