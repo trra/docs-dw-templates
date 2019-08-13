@@ -17,8 +17,8 @@ GO
 -- FileName: {{ p.template.outputFileName }}
 -- 
 -- Author: {{ p.settings.author }}
--- Created: {{ p.settings.createdAt }}
--- Modified: {{ p.settings.authorInitials }} {{ p.settings.createdAt }}
+-- Created: {{ | dateFormat(current, 'YYYY MM dd HH:mm:ss a') }}
+-- Modified: {{ p.settings.authorInitials }} {{ | dateFormat('YYYY MM dd HH:mm:ss a') }}
 -- 
 -- HISTORY:
 -- PR     	Date      	By	Comments

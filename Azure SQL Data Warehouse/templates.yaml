@@ -1,5 +1,5 @@
 defaultSettings: &defaults
-  author: '{USERDOMAIN}\\{USERNAME}'
+  author: <author>
   license: MIT License
   version: ~0.1.1
   projectName: <projectName>
@@ -11,10 +11,10 @@ templates:
     <<: *defaults
     description: 'Create standard staging table'
     templateFileName: Azure SQL Data Warehouse/stage.table.create.njk
-    outputFileName: /Stage/Table/<destSchema>.<destTable>.sql
+    outputFileName: '/Stage/Table/{destSchema}.{destTable}.sql'
     destSchema: stage
-    destTable: '{objectName}.{sequenceNo}'
-    objectNameMask:
+    destTable: '{objectName}'
+    objectNameMask: <exclusionMaskArray>
     wizardQuestions:
       - Select Source Table
       - Select Source Columns
