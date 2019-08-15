@@ -1,12 +1,12 @@
-{%- import 'macro.njk' as macro -%}
-{%- set schemaName = p.meta.destination.schemaName -%}
-{%- set tableName = p.meta.destination.tableName -%}
-{%- set columns = p.meta.destination.columns -%}
+{%- import 'Azure SQL Data Warehouse/macro.njk' as macro -%}
+{%- set schemaName = p.meta.destination[0].schemaName -%}
+{%- set tableName = p.meta.destination[0].tableName -%}
+{%- set columns = p.meta.destination[0].columns -%}
 {%- set integers = ['int', 'integer', 'numeric'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set keyColumnName = p.meta.objectName+'Key' -%}
 {{ macro.comments (p,  
-  "Create staging table [{{schemaName}}].[{{tableName}}]" | render(p.meta.destination) | safe )  }}
+  "Create staging table [{{schemaName}}].[{{tableName}}]" | render(p.meta.destination[0]) | safe )  }}
 --
 IF OBJECT_ID('[{{ schemaName }}].[{{ tableName }}]', 'U') IS NOT NULL DROP TABLE [{{ schemaName }}].[{{ tableName }}]
 GO
