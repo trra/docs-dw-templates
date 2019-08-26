@@ -1,7 +1,7 @@
 {%- import 'Azure SQL Data Warehouse/macro.njk' as macro -%}
 {%- set schemaName = p.meta.destination[0].schemaName -%}
 {%- set tableName = p.meta.destination[0].tableName -%}
-{%- set columns = p.meta.destination[0].columns -%}
+{%- set columnNames = p.meta.destination[0].columnNames -%}
 {%- set integers = ['int', 'integer', 'numeric'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set keyColumnName = p.meta.object.name+'Key' -%}
@@ -13,7 +13,7 @@ GO
 
 CREATE TABLE [{{schemaName}}].[{{tableName}}] (
     [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-    {%- for key in columns %}
+    {%- for key in columnNames %}
     [{{key.name}}] [{{key.dataType}}] 
     {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
     {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)

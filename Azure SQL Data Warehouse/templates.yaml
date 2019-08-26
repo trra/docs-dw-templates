@@ -45,7 +45,7 @@ templates:
     description: "Standard staging table insert procedure"
     templateFileName: Azure SQL Data Warehouse/stage.table.proc.njk
     outputFileName: "/Stage/TableProc/{destSchema}.{destTable}.sql"
-    destSchema: "{destSchema}"
+    destSchema: "stage"
     destTable: "{objectName}"
     spSchema: "{destSchema}"
     spName: upd_{objectName}
