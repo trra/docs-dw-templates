@@ -6,7 +6,7 @@
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set keyColumnName = p.meta.objectName+'Key' -%}
 {{ macro.comments (p,  
-  "Create staging table [{{schemaName}}].[{{tableName}}]" | render(p.meta.destination[0]) | safe )  }}
+  "Create staging table [{{ schemaName }}].[{{ tableName }}]" | render(p.meta.destination[0]) | safe )  }}
 --
 IF OBJECT_ID('[{{ schemaName }}].[{{ tableName }}]', 'U') IS NOT NULL DROP TABLE [{{ schemaName }}].[{{ tableName }}]
 GO

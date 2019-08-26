@@ -7,13 +7,13 @@ defaultSettings: &defaults
 
 format: Azure SQL Data Warehouse
 templates:
-  - name: 'Stage: create table'
+  - name: "Example: create table"
     <<: *defaults
-    description: 'Create standard staging table'
+    description: "Create standard staging table"
     templateFileName: Azure SQL Data Warehouse/stage.table.create.njk
-    outputFileName: '/Stage/Table/{destSchema}.{destTable}.sql'
+    outputFileName: "/Stage/Table/{destSchema}.{destTable}.sql"
     destSchema: stage
-    destTable: '{objectName}'
+    destTable: "{objectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
       - Select Source Table
@@ -26,13 +26,44 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Set Column Name format
-  - name: 'External: select external table source file'
+  - name: "Stage: create table"
     <<: *defaults
-    description: 'Dynamically assign a source blob file'
+    description: "Create standard staging table"
+    templateFileName: Azure SQL Data Warehouse/stage.table.create.njk
+    outputFileName: "/Stage/Table/{destSchema}.{destTable}.sql"
+    destSchema: stage
+    destTable: "{objectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Select Source Table
+      - Select Source Columns
+      - Object Name
+      - Set Column Name format
+  - name: "Stage: table insert procedure"
+    <<: *defaults
+    description: "Standard staging table insert procedure"
+    templateFileName: Azure SQL Data Warehouse/stage.table.proc.njk
+    outputFileName: "/Stage/TableProc/{destSchema}.{destTable}.sql"
+    destSchema: "{destSchema}"
+    destTable: "{objectName}"
+    spSchema: "{destSchema}"
+    spName: upd_{objectName}
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Procedure Name
+      - Set Column Name format
+  - name: "External: select external table source file"
+    <<: *defaults
+    description: "Dynamically assign a source blob file"
     templateFileName: Azure SQL Data Warehouse/external.table.select.njk
     outputFileName: /External/SProc/{spSchema}.{spName}.sql
     destSchema: ext
-    destTable: '{objectName}'
+    destTable: "{objectName}"
     spSchema: ext
     spName: select.{objectName}
     objectNameMask: /raw_/g
