@@ -34,7 +34,7 @@ templates:
     destSchema: "asset"
     destTable: "{objectName}"
     spSchema: "{destSchema}"
-    spName: sp{objectName}
+    spName: "sp{objectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
       - Select Source Table

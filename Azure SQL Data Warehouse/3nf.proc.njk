@@ -11,7 +11,7 @@
 {%- set spName = p.meta.object.spName -%}
 {%- set integers = ['int', 'integer', 'numeric'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
-{%- set keyColumnName = p.meta.objectName+'Key' -%}
+{%- set keyColumnName = p.meta.object.name+'Key' -%}
 IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL DROP PROCEDURE [{{spSchema}}].[{{spName}}];
 GO
 
