@@ -2,6 +2,7 @@
 {%- set schemaName = p.meta.destination[0].schemaName -%}
 {%- set tableName = p.meta.destination[0].tableName -%}
 {%- set columns = p.meta.destination[0].columns -%}
+{%- set columnsPK = p.meta.destination[0].columnsPK -%}
 {%- set srcSchemaName = p.meta.source[0].schemaName -%}
 {%- set srcTableName = p.meta.source[0].tableName -%}
 {%- set srcColumns = p.meta.source[0].columns -%}
@@ -36,7 +37,7 @@ DECLARE @sessionStatus varchar(50)
 
 BEGIN TRY
     -- add all manual dependencies here
-    EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemName}}.{{srcTableName}}', @destObjectCode = @objectCode
+    EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
     -- always check for session status AFTER adding new dependencies
     EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
 
@@ -76,7 +77,7 @@ BEGIN TRY
             rowChangeType = 'I',
             rowHashType1 = CONVERT(CHAR(40), hashBytes('SHA1', CONVERT(NVARCHAR(MAX), 
                 CONCAT_WS('~',{%- for key in srcColumns -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%} ))), 2)            
-        FROM [{{srcSchemName}}].[{{srcTableName}}] src
+        FROM [{{srcSchemaName}}].[{{srcTableName}}] src
 
         --  Now compare new Hash values in temp staging above with hash values for existing data in the dimension to identify rows that have changed
         --  and update the new values to the dim table
@@ -170,7 +171,7 @@ BEGIN TRY
         DECLARE @expectCountMin bigInt, @expectCountMax bigInt
         EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
         ;WITH 
-            Expect as (SELECT expectCount = count(*) FROM [{{srcSchemName}}].[{{srcTableName}}]),
+            Expect as (SELECT expectCount = count(*) FROM [{{srcSchemaName}}].[{{srcTableName}}]),
             Actual as (SELECT 
                     actualCount = SUM(CASE 
                         WHEN [{{keyColumnName}}] = -1 THEN 0 
