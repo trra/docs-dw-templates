@@ -20,7 +20,10 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
     @packageName varchar(100)
 AS
 {{ macro.comments (p,  
-  "Fetch data from source table [{{ source[0].schemaName }}].[{{ source[0].tableName }}] into staging table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]" | render(p.meta) | safe )  }}
+  "Fetch data from source table [{{ source[0].schemaName }}].[{{ source[0].tableName }}] into staging table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
+--
+-- Execution sample:
+-- EXEC [{{object.spSchema}}].[{{object.spName}}] 'adminSession', 'ETL'" | render(p.meta) | safe )  }}
 -- T      	2019-05-23	SA	unit tests - add [getRowLimit] call to get expected row count
 --
 SET NOCOUNT ON;
@@ -44,7 +47,6 @@ BEGIN TRY
 
         IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
           CREATE TABLE [{{schemaName}}].[{{tableName}}] (
-              [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
               {%- for key in srcColumns %}
               [{{key.name}}] [{{key.dataType}}] 
               {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})

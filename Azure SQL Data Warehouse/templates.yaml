@@ -45,6 +45,25 @@ templates:
       - Destination Table
       - Procedure Name
       - Set Column Name format
+  - name: "3NF: SCD1 upsert procedure"
+    <<: *defaults
+    description: "3NF SCD Type 1 procedure"
+    templateFileName: Azure SQL Data Warehouse/3nf.scd1.proc.njk
+    outputFileName: "/3NF/SCD1 procedures/{destSchema}.sp{destTable}.sql"
+    destSchema: "asset"
+    destTable: "{objectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{objectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Procedure Name
+      - Set Column Name format
   - name: "3NF: stage upsert procedure"
     <<: *defaults
     description: "3NF stage procedure"
