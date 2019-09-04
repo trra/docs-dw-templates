@@ -69,7 +69,7 @@ BEGIN TRY
         SELECT  
             {% for key in srcColumns -%}
             [{{columns[loop.index0].name}}] = src.[{{key.name}}],
-            {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+            {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
             {% endfor -%}
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
