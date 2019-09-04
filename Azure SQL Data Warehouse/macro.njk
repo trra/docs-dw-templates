@@ -10,11 +10,25 @@ SET QUOTED_IDENTIFIER ON
 GO
 {%- endmacro %}
 
-{% macro comments (p, description) -%}
+{% macro extComments (p, description) -%}
 -- ********** Project: {{ p.settings.projectName }} **********
 -- {{ description }}
 -- Template: {{ p.template.templateFileName }}
 -- FileName: {{ p.template.outputFileName }}
+-- 
+-- Author: {{ p.settings.author }}
+-- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+-- Modified: {{ p.settings.authorInitials }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+-- 
+-- HISTORY:
+-- PR     	Date      	By	Comments
+-- ----   	----------	---	---------------------------------------------------------
+{%- endmacro %}
+
+{% macro comments (p, description) -%}
+-- ********** Project: {{ p.settings.projectName }} **********
+-- Git FileName: {{ p.template.outputFileName }}
+-- {{ description }}
 -- 
 -- Author: {{ p.settings.author }}
 -- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}

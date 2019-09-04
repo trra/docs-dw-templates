@@ -21,8 +21,8 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
     @scdDate     date
 AS
 {{ macro.comments (p,  
-  "Fetch data from source table [{{ source[0].schemaName }}].[{{ source[0].tableName }}] 
--- into 3NF SCD Type 2 table table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
+  "Fetch data from source [{{ source[0].schemaName }}].[{{ source[0].tableName }}] into 3NF SCD Type 2 table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
+--
 -- Execution sample:
 -- EXEC [{{object.spSchema}}].[{{object.spName}}] 'adminSession', 'ETL', NULL" | render(p.meta) | safe )  }}
 -- T      	2019-06-04	SA	updated scd2 unit tests and set sessionStatus in exception block
@@ -163,7 +163,7 @@ BEGIN TRY
           dwPackageName = @packageName,
           dwUpdateDate = @now
         FROM [#ds2.2.{{srcSchemaName}}.{{srcTableName}}] DD 
-        WHERE {%- for key in columnsPK %} DD.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+        WHERE {%- for key in srcColumnsPK %} DD.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
           AND DD.scdVersion = [{{schemaName}}].[{{tableName}}].scdVersion 
 
 
@@ -221,7 +221,7 @@ BEGIN TRY
         DECLARE @checkOrphanRows varchar(250)
 
         ;WITH 
-        S as (SELECT id = CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ), 
+        S as (SELECT id = CONCAT_WS('~',{%- for key in srcColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ), 
             scdStartDate, scdEndDate, scdCurrentFlag 
             FROM [{{schemaName}}].[{{tableName}}]),
         TESTS AS (

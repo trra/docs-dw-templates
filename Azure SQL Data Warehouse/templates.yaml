@@ -42,6 +42,7 @@ templates:
       - Select Source PK Columns
       - Object Name
       - Destination Schema
+      - Destination Table
       - Procedure Name
       - Set Column Name format
   - name: "Stage: create table"
