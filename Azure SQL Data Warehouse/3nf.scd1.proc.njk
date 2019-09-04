@@ -28,7 +28,7 @@ AS
 -- T      	2019-04-15	SA	rename [packageName] to [loadFrom]
 --
 SET NOCOUNT ON;
-DECLARE @objectCode varchar(250) = '{{destSchema}}.{{tableName}}' -- define destination object code 
+DECLARE @objectCode varchar(250) = '{{schemaName}}.{{tableName}}' -- define destination object code 
 DECLARE @procName varchar(250)   = '{{spSchema}}.{{spName}}' -- current proc name - OBJECT_NAME(@@PROCID) is not yet supported
 
 DECLARE @message varchar(1000)
@@ -64,10 +64,10 @@ BEGIN TRY
         DECLARE @now datetime = ndw.getLocalDateTime(getUtcDate())
      
         -- Create temp staging table in CTAS to generate Hash Key for each row of all data in actual staging table
-        IF OBJECT_ID('tempdb..#{{destSchema}}_{{tableName}}_Staging') IS NOT NULL
-            DROP TABLE #{{destSchema}}_{{tableName}}_Staging
+        IF OBJECT_ID('tempdb..#{{schemaName}}_{{tableName}}_Staging') IS NOT NULL
+            DROP TABLE #{{schemaName}}_{{tableName}}_Staging
 
-        CREATE TABLE #{{destSchema}}_{{tableName}}_Staging WITH (DISTRIBUTION = ROUND_ROBIN)
+        CREATE TABLE #{{schemaName}}_{{tableName}}_Staging WITH (DISTRIBUTION = ROUND_ROBIN)
         AS
         SELECT 
             {% for key in srcColumns -%}
@@ -80,25 +80,25 @@ BEGIN TRY
 
         --  Now compare new Hash values in temp staging above with hash values for existing data in the dimension to identify rows that have changed
         --  and update the new values to the dim table
-        IF OBJECT_ID('tempdb..#{{destSchema}}_{{tableName}}_Upsert') IS NOT NULL
-            DROP TABLE #{{destSchema}}_{{tableName}}_Upsert
+        IF OBJECT_ID('tempdb..#{{schemaName}}_{{tableName}}_Upsert') IS NOT NULL
+            DROP TABLE #{{schemaName}}_{{tableName}}_Upsert
 
-        CREATE TABLE #{{destSchema}}_{{tableName}}_Upsert WITH (DISTRIBUTION = ROUND_ROBIN) AS
+        CREATE TABLE #{{schemaName}}_{{tableName}}_Upsert WITH (DISTRIBUTION = ROUND_ROBIN) AS
         SELECT 
             {% for key in columns -%}
             [{{key.name}}] = stg.[{{key.name}}],
             {% endfor -%}
             rowHashType1 = stg.rowHashType1,
             rowChangeType = CASE WHEN dim.rowChangeType IS NULL THEN 'I' ELSE 'U' END
-        FROM #{{destSchema}}_{{tableName}}_Staging AS stg
-        INNER JOIN [{{destSchema}}].[{{tableName}}] AS dim
+        FROM #{{schemaName}}_{{tableName}}_Staging AS stg
+        INNER JOIN [{{schemaName}}].[{{tableName}}] AS dim
             ON {% for key in columnsPK -%}
             dim.[{{key.name}}] = stg.[{{key.name}}]
             {{'AND ' if not loop.last -}}
             {% endfor -%}
             AND dim.rowHashType <> stg.rowHashType1
 
-        UPDATE [{{destSchema}}].[{{tableName}}]
+        UPDATE [{{schemaName}}].[{{tableName}}]
         SET {% for key in columns -%}
             [{{key.name}}] = src.[{{key.name}}],
             {% endfor -%}
@@ -107,16 +107,16 @@ BEGIN TRY
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
             dwUpdateDate = @now
-        FROM  #{{destSchema}}_{{tableName}}_Upsert AS src
+        FROM  #{{schemaName}}_{{tableName}}_Upsert AS src
         WHERE {% for key in columnsPK -%}
-            [{{destSchema}}].[{{tableName}}].[{{key.name}}] = src.[{{key.name}}]
+            [{{schemaName}}].[{{tableName}}].[{{key.name}}] = src.[{{key.name}}]
             {{'AND ' if not loop.last -}}
             {% endfor -%}
-        AND [{{destSchema}}].[{{tableName}}].rowHashType <> src.rowHashType1
+        AND [{{schemaName}}].[{{tableName}}].rowHashType <> src.rowHashType1
                  
 
         -- Now that we changes are updated, simply insert what has come in as new	
-        INSERT INTO [{{destSchema}}].[{{tableName}}] (
+        INSERT INTO [{{schemaName}}].[{{tableName}}] (
             {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
             {% endif -%}{%- endfor %}
             rowHashType, rowChangeType, dwSessionNo, dwPackageName, dwUpdateDate)
@@ -130,8 +130,8 @@ BEGIN TRY
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
             dwUpdateDate = @now
-        FROM #{{destSchema}}_{{tableName}}_Staging AS src
-        LEFT OUTER JOIN [{{destSchema}}].[{{tableName}}] AS dim
+        FROM #{{schemaName}}_{{tableName}}_Staging AS src
+        LEFT OUTER JOIN [{{schemaName}}].[{{tableName}}] AS dim
             ON {% for key in columnsPK -%}
             dim.[{{key.name}}] = src.[{{key.name}}]
             {{'AND ' if not loop.last }}
@@ -140,22 +140,22 @@ BEGIN TRY
 
 
         -- Update existing rows as deleted that do not exists in the load table
-        UPDATE [{{destSchema}}].[{{tableName}}] 
+        UPDATE [{{schemaName}}].[{{tableName}}] 
         SET rowChangeType = 'D',
             sessionNo = @sessionNo,
             loadFrom = @packageName,
             loadDateTime = @now
         WHERE NOT EXISTS ( 
             SELECT 1 
-            FROM #{{destSchema}}_{{tableName}}_Staging stg
+            FROM #{{schemaName}}_{{tableName}}_Staging stg
             WHERE {% for key in columnsPK -%}
-                [{{destSchema}}].[{{tableName}}].[{{key.name}}] = stg.[{{key.name}}]
+                [{{schemaName}}].[{{tableName}}].[{{key.name}}] = stg.[{{key.name}}]
                 {{'AND ' if not loop.last -}}
                 {% endfor -%}
-                {# AND [{{destSchema}}].[{{tableName}}].rowHashType = stg.rowHashType_new #}
+                {# AND [{{schemaName}}].[{{tableName}}].rowHashType = stg.rowHashType_new #}
             )
-            AND [{{destSchema}}].[{{tableName}}].rowChangeType != 'D'
-            AND [{{destSchema}}].[{{tableName}}].{{keyColumnName}} != -1;
+            AND [{{schemaName}}].[{{tableName}}].rowChangeType != 'D'
+            AND [{{schemaName}}].[{{tableName}}].{{keyColumnName}} != -1;
 
 
         -- ************ UnitTests ****************                
@@ -185,7 +185,7 @@ BEGIN TRY
                     actualCountDeleted = SUM(CASE 
                         WHEN rowChangeType = 'D' THEN 1
                         ELSE 0 END)
-                FROM [{{destSchema}}].[{{tableName}}])
+                FROM [{{schemaName}}].[{{tableName}}])
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
             @checkQuantityKey = test.assertEqualsInt('checkQuantityKey (destination dimKey = 1)', 1, actualCountKey),
