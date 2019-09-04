@@ -1,0 +1,150 @@
+{%- import 'Azure SQL Data Warehouse/macro.njk' as macro -%}
+{%- set schemaName = p.meta.destination[0].schemaName -%}
+{%- set tableName = p.meta.destination[0].tableName -%}
+{%- set columns = p.meta.destination[0].columns -%}
+{%- set srcSchemaName = p.meta.source[0].schemaName -%}
+{%- set srcTableName = p.meta.source[0].tableName -%}
+{%- set srcColumns = p.meta.source[0].columns -%}
+{%- set srcColumnsPK = p.meta.source[0].columnsPK -%}
+{%- set objectName = p.meta.object.name -%}
+{%- set spSchema = p.meta.object.spSchema -%}
+{%- set spName = p.meta.object.spName -%}
+{%- set integers = ['int', 'integer', 'numeric'] -%}
+{%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
+{%- set keyColumnName = p.meta.object.name+'Key' -%}
+IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL DROP PROCEDURE [{{spSchema}}].[{{spName}}];
+GO
+
+CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
+    @sessionNo   varchar(50),
+    @packageName varchar(100)
+AS
+{{ macro.comments (p,  
+  "Fetch data from source table [{{ source[0].schemaName }}].[{{ source[0].tableName }}] into staging table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]" | render(p.meta) | safe )  }}
+-- T      	2019-05-23	SA	unit tests - add [getRowLimit] call to get expected row count
+--
+SET NOCOUNT ON;
+DECLARE @objectCode varchar(250) = '{{schemaName}}.{{tableName}}' -- define destination object code 
+DECLARE @procName varchar(250)   = '{{spSchema}}.{{spName}}' -- current proc name - OBJECT_NAME(@@PROCID) is not yet supported
+
+DECLARE @rowsRead INT, @rowsWritten INT
+DECLARE @message varchar(1000)
+DECLARE @sessionStatus varchar(50)
+
+BEGIN TRY
+    -- add all manual dependencies here
+    EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
+    -- always check for session status AFTER adding new dependencies
+    EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
+
+    IF @sessionStatus in ('Ready', 'Failed') BEGIN 
+        EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
+        -- ************ ETL code starts here ****************
+        -- perform action
+
+        IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
+          CREATE TABLE [{{schemaName}}].[{{tableName}}] (
+              [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
+              {%- for key in srcColumns %}
+              [{{key.name}}] [{{key.dataType}}] 
+              {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+              {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
+              {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+              {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+              {{- "," -}}
+              {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+              {% endfor %}
+              dwSessionNo [varchar](50) NULL,
+              dwPackageName [varchar](100) NULL,
+              dwUpdateDate [datetime] NULL
+          ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
+
+        DECLARE @now datetime = ndw.getLocalDateTime(getUtcDate())
+     
+        TRUNCATE TABLE [{{schemaName}}].[{{tableName}}];
+        INSERT INTO [{{schemaName}}].[{{tableName}}] (
+            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
+            {% endif -%}{%- endfor %}
+            dwSessionNo, dwPackageName, dwUpdateDate)
+        SELECT  
+            {% for key in srcColumns -%}
+            [{{columns[loop.index0].name}}] = src.[{{key.name}}],
+            {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+            {% endfor -%}
+            dwSessionNo = @sessionNo,
+            dwPackageName = @packageName,
+            dwUpdateDate = @now
+        FROM [{{srcSchemaName}}].[{{srcTableName}}] AS src
+
+        -- ************ UnitTests ****************                
+
+        DECLARE @checkTotalQuantity varchar(250)
+        DECLARE @checkQuantityPK varchar(250)
+        DECLARE @checkQuantityLimit varchar(250)
+        DECLARE @checkNullPK varchar(250)
+        DECLARE @expectCountMin bigInt, @expectCountMax bigInt
+        EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
+        ;WITH 
+            Expect as (SELECT expectCount = count(*) FROM [{{srcSchemaName}}].[{{srcTableName}}]),
+            Actual as (SELECT 
+                actualCount = count(*),
+                actualCountPK = COUNT(DISTINCT CONCAT_WS('~',{%- for key in srcColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) ),
+                actualNullPK = SUM( CASE WHEN {% for key in srcColumnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+                FROM [{{schemaName}}].[{{tableName}}])
+        SELECT 
+            @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
+            @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
+            @checkQuantityLimit = test.assertTrue(CONCAT('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
+                CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
+            @checkNullPK = test.assertEqualsInt('checkNullPK (PK has NULL values)', 0, actualNullPK),
+            @rowsRead = expectCount, @rowsWritten = actualCount
+        FROM Actual CROSS JOIN Expect
+
+        -- Info
+        PRINT @checkTotalQuantity
+        PRINT @checkQuantityPK
+        PRINT @checkQuantityLimit
+        PRINT @checkNullPK
+
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkNullPK
+
+        -- Warnings
+        -- SET @checkNullPK = REPLACE( @checkNullPK, 'TEST FAILED', 'WARNING!')
+        -- PRINT @checkNullPK
+        -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkNullPK
+
+        -- Raise Errors
+        IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
+        IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
+        IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
+        IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
+        
+        SET @sessionStatus = 'Succeeded'
+    
+        -- ************ ETL code ends here ****************                
+
+        -- EXEC [etl].[LastRowCount] @countRows OUT -- @@ROWCOUNT workaround
+        SET @message = etl.setLogMessage('Dimension', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+        -- change object status to @sessionStatus
+        EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+    END 
+    ELSE BEGIN -- else skip this step
+        SET @message = etl.setLogMessage('Dimension', 'Skip this step', NULL, @sessionStatus)
+        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    END
+END TRY
+BEGIN CATCH
+    -- change object status to 'Failed'
+    SET @message = etl.setLogMessage('Dimension', 'Execution failed', 
+                [etl].[setLogErrorMessage] ( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
+                @sessionStatus)
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Failed', @countRows = NULL
+    RAISERROR (@message, 16, 1)
+END CATCH
