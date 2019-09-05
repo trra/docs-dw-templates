@@ -69,12 +69,12 @@ BEGIN TRY
           EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
         END
 
-        IF (SELECT count(*) FROM asset.CategoryGroup WHERE CategoryGroupKey = -1) = 0
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{keyColumnName}}] = -1) = 0
         BEGIN 
           SET @message = 'Insert default -1 "Unknown" key row'
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
           INSERT INTO [{{schemaName}}].[{{tableName}}]
-            ( [{{dimKeyColumn}}], 
+            ( [{{keyColumnName}}], 
               {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
               {% endif -%}{%- endfor %}
               rowHashType, rowChangeType, sessionNo, loadFrom, loadDateTime )
@@ -89,7 +89,7 @@ BEGIN TRY
               rowHashType = '-1',
               rowChangeType = 'I',				
               dwSessionNo = @sessionNo,
-              dwPackageName = 'Initial Load',
+              dwPackageName = @packageName,
               dwUpdateDate = @now;
           SET IDENTITY_INSERT  [{{schemaName}}].[{{tableName}}] OFF
           PRINT @message
