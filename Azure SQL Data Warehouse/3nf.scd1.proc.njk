@@ -82,8 +82,8 @@ BEGIN TRY
               [{{keyColumnName}}] = -1,
               {%- for key in columns %} 
               [{{key.name}}] = {%- if (key.dataType in integers ) -%} -1, 
-                  {%- elif (key.dataType in strings and key.characterMaximumLength<7) -%} 'U', 
-                  {%- elif (key.dataType in strings and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
+                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength<7) -%} 'U', 
+                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
                   {%- else %} null, {%- endif %}
               {%- endfor %}
               rowHashType = '-1',
