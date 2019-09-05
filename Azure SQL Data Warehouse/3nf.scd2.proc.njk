@@ -47,7 +47,11 @@ BEGIN TRY
         -- ************ ETL code starts here ****************
         -- perform action
         
+        DECLARE @now datetime = ndw.getLocalDateTime(getUtcDate())
+        SET @scdDate = isNull(@scdDate, @now)
+
         IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
+        BEGIN
           CREATE TABLE [{{schemaName}}].[{{tableName}}] (
               [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
               {%- for key in srcColumns %}
@@ -68,10 +72,40 @@ BEGIN TRY
               dwPackageName [varchar](100) NULL,
               dwUpdateDate [datetime] NULL
           ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
+          PRINT @message
+          EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+        END
 
-
-        DECLARE @now datetime = ndw.getLocalDateTime(getUtcDate())
-        SET @scdDate = isNull(@scdDate, @now)
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{keyColumnName}}] = -1) = 0
+        BEGIN 
+          SET @message = 'Insert default -1 "Unknown" row'
+          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
+          INSERT INTO [{{schemaName}}].[{{tableName}}]
+            ( [{{keyColumnName}}], 
+              {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
+              {% endif -%}{%- endfor %}
+              scdCurrentFlag, scdStartDate, scdEndDate, scdVersion, scdDeletedFlag, 
+              dwSessionNo, dwPackageName, dwUpdateDate )
+          SELECT 
+              [{{keyColumnName}}] = -1,
+              {%- for key in columns %} 
+              [{{key.name}}] = {%- if (key.dataType in integers ) -%} -1, 
+                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength<7) -%} 'U', 
+                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
+                  {%- else %} null, {%- endif %}
+              {%- endfor %}
+              scdCurrentFlag = 'Y',
+              scdStartDate = '1990-01-01 00:00:00.000',
+              scdEndDate = '9999-12-31 00:00:00.000',
+              scdVersion = 1,
+              scdDeletedFlag = 'N',
+              dwSessionNo = @sessionNo,
+              dwPackageName = @packageName,
+              dwUpdateDate = @now;
+          SET IDENTITY_INSERT  [{{schemaName}}].[{{tableName}}] OFF
+          PRINT @message
+          EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+        END
      
         -- Create temp table to update existing records
         IF OBJECT_ID('tempdb..[#ds2.1.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.1.{{srcSchemaName}}.{{srcTableName}}]
