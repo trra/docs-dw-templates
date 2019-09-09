@@ -35,6 +35,7 @@ DECLARE @procName varchar(250)   = '{{spSchema}}.{{spName}}' -- current proc nam
 DECLARE @message varchar(1000)
 DECLARE @sessionStatus varchar(50)
 
+PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 BEGIN TRY
     -- add all manual dependencies here
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
