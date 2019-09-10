@@ -249,7 +249,6 @@ BEGIN TRY
         IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
         IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
         
-
         
         -- ************ SCD2 UnitTests ****************         
 
@@ -298,8 +297,6 @@ BEGIN TRY
         -- Raise Errors
         IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
         IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
-
-        SET @sessionStatus = 'Succeeded'
     
     
         -- ************ Finalize transformation here ****************                
@@ -310,6 +307,7 @@ BEGIN TRY
 
         -- ************ ETL code ends here ****************                
 
+        SET @sessionStatus = 'Succeeded'
         SET @message = etl.setLogMessage('Dimension', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
         EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 

@@ -125,11 +125,11 @@ BEGIN TRY
         IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
         IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
         IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
-        
-        SET @sessionStatus = 'Succeeded'
+
     
         -- ************ ETL code ends here ****************                
-
+        
+        SET @sessionStatus = 'Succeeded'
         -- EXEC [etl].[LastRowCount] @countRows OUT -- @@ROWCOUNT workaround
         SET @message = etl.setLogMessage('Dimension', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
         EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
