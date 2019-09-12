@@ -47,6 +47,7 @@ BEGIN TRY
         -- perform action
 
         IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
+        BEGIN
             SET @message = 'Create table [{{schemaName}}].[{{tableName}}]'
             CREATE TABLE [{{schemaName}}].[{{tableName}}] (
                 {%- for key in srcColumns %}
@@ -62,6 +63,7 @@ BEGIN TRY
                 dwPackageName [varchar](100) NULL,
                 dwUpdateDate [datetime] NULL
             ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
+        END
 
         DECLARE @now datetime = ndw.getLocalDateTime(getUtcDate())
      
