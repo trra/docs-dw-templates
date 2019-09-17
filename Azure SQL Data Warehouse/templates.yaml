@@ -16,6 +16,7 @@ templates:
     destTable: "{objectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
+      - Naming Format
       - Select Source Table
       - Select Source Columns
       - Select Source PK Columns
@@ -23,7 +24,6 @@ templates:
       - Procedure Name
       - Destination Schema
       - Destination Table
-      - Naming Format
   - name: "3NF: SCD2 upsert procedure"
     <<: *defaults
     description: "3NF SCD Type 2 procedure"
@@ -35,6 +35,7 @@ templates:
     spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
+      - Naming Format
       - Select Source Table
       - Select Source Columns
       - Select Source PK Columns
@@ -42,7 +43,6 @@ templates:
       - Destination Schema
       - Destination Table
       - Procedure Name
-      - Naming Format
   - name: "3NF: SCD1 upsert procedure"
     <<: *defaults
     description: "3NF SCD Type 1 procedure"
@@ -54,6 +54,7 @@ templates:
     spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
+      - Naming Format
       - Select Source Table
       - Select Source Columns
       - Select Source PK Columns
@@ -61,7 +62,6 @@ templates:
       - Destination Schema
       - Destination Table
       - Procedure Name
-      - Naming Format
   - name: "3NF: stage upsert procedure"
     <<: *defaults
     description: "3NF stage procedure"
@@ -73,10 +73,10 @@ templates:
     spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
+      - Naming Format
       - Select Source Table
       - Select Source Columns
       - Select Source PK Columns
-      - Naming Format
       - Object Name
       - Destination Schema
       - Destination Table
