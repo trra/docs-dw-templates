@@ -2,6 +2,7 @@
 {%- set schemaName = p.meta.destination[0].schemaName -%}
 {%- set tableName = p.meta.destination[0].tableName -%}
 {%- set columns = p.meta.destination[0].columns -%}
+{%- set columnsPK = p.meta.destination[0].columnsPK -%}
 {%- set srcSchemaName = p.meta.source[0].table.schemaName -%}
 {%- set srcTableName = p.meta.source[0].table.tableName -%}
 {%- set srcColumns = p.meta.source[0].columns -%}
