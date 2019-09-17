@@ -23,7 +23,7 @@ templates:
       - Procedure Name
       - Destination Schema
       - Destination Table
-      - Set Column Name format
+      - Naming Format
   - name: "3NF: SCD2 upsert procedure"
     <<: *defaults
     description: "3NF SCD Type 2 procedure"
@@ -42,7 +42,7 @@ templates:
       - Destination Schema
       - Destination Table
       - Procedure Name
-      - Set Column Name format
+      - Naming Format
   - name: "3NF: SCD1 upsert procedure"
     <<: *defaults
     description: "3NF SCD Type 1 procedure"
@@ -61,7 +61,7 @@ templates:
       - Destination Schema
       - Destination Table
       - Procedure Name
-      - Set Column Name format
+      - Naming Format
   - name: "3NF: stage upsert procedure"
     <<: *defaults
     description: "3NF stage procedure"
@@ -76,11 +76,11 @@ templates:
       - Select Source Table
       - Select Source Columns
       - Select Source PK Columns
+      - Naming Format
       - Object Name
       - Destination Schema
       - Destination Table
       - Procedure Name
-      - Set Column Name format
   - name: "Stage: create table"
     <<: *defaults
     description: "Create standard staging table"
@@ -92,9 +92,9 @@ templates:
     wizardQuestions:
       - Select Source Table
       - Select Source Columns
+      - Naming Format
       - Object Name
       - Destination Schema
-      - Set Column Name format
   - name: "Stage: table insert procedure"
     <<: *defaults
     description: "Standard staging table insert procedure"
@@ -112,7 +112,7 @@ templates:
       - Object Name
       - Destination Schema
       - Procedure Name
-      - Set Column Name format
+      - Naming Format
   - name: "External: select external table source file"
     <<: *defaults
     description: "Dynamically assign a source blob file"
