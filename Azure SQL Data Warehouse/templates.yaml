@@ -21,10 +21,8 @@ templates:
       - Select Source PK Columns
       - Object Name
       - Procedure Name
-      - Select Destination Table
       - Destination Schema
       - Destination Table
-      - Select Destination Columns
       - Set Column Name format
   - name: "3NF: SCD2 upsert procedure"
     <<: *defaults
@@ -32,9 +30,9 @@ templates:
     templateFileName: Azure SQL Data Warehouse/3nf.scd2.proc.njk
     outputFileName: "/3NF/SCD2 procedures/{destSchema}.sp{destTable}.sql"
     destSchema: "asset"
-    destTable: "{objectName}"
+    destTable: "{ObjectName}"
     spSchema: "{destSchema}"
-    spName: "sp{objectName}"
+    spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
       - Select Source Table
@@ -51,9 +49,9 @@ templates:
     templateFileName: Azure SQL Data Warehouse/3nf.scd1.proc.njk
     outputFileName: "/3NF/SCD1 procedures/{destSchema}.sp{destTable}.sql"
     destSchema: "asset"
-    destTable: "{objectName}"
+    destTable: "{ObjectName}"
     spSchema: "{destSchema}"
-    spName: "sp{objectName}"
+    spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
       - Select Source Table
@@ -70,9 +68,9 @@ templates:
     templateFileName: Azure SQL Data Warehouse/3nf.stage.proc.njk
     outputFileName: "/3NF/Stage procedures/{destSchema}.sp{destTable}.sql"
     destSchema: "asset"
-    destTable: "{objectName}"
+    destTable: "{ObjectName}"
     spSchema: "{destSchema}"
-    spName: "sp{objectName}"
+    spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
       - Select Source Table
@@ -89,7 +87,7 @@ templates:
     templateFileName: Azure SQL Data Warehouse/stage.table.create.njk
     outputFileName: "/Stage/Table/{destSchema}.{destTable}.sql"
     destSchema: "{destSchema}"
-    destTable: "{objectName}"
+    destTable: "{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
       - Select Source Table

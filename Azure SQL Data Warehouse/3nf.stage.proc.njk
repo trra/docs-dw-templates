@@ -2,6 +2,7 @@
 {%- set schemaName = p.meta.destination[0].schemaName -%}
 {%- set tableName = p.meta.destination[0].tableName -%}
 {%- set columns = p.meta.destination[0].columns -%}
+{%- set columnsPK = p.meta.destination[0].columnsPK -%}
 {%- set srcSchemaName = p.meta.source[0].schemaName -%}
 {%- set srcTableName = p.meta.source[0].tableName -%}
 {%- set srcColumns = p.meta.source[0].columns -%}
@@ -50,14 +51,14 @@ BEGIN TRY
         BEGIN
             SET @message = 'Create table [{{schemaName}}].[{{tableName}}]'
             CREATE TABLE [{{schemaName}}].[{{tableName}}] (
-                {%- for key in srcColumns %}
+                {%- for key in columns %}
                 [{{key.name}}] [{{key.dataType}}] 
                 {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
                 {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
                 {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
                 {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
                 {{- "," -}}
-                {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+                {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
                 {% endfor %}
                 dwSessionNo [varchar](50) NULL,
                 dwPackageName [varchar](100) NULL,
@@ -94,8 +95,8 @@ BEGIN TRY
             Expect as (SELECT expectCount = count(*) FROM [{{srcSchemaName}}].[{{srcTableName}}]),
             Actual as (SELECT 
                 actualCount = count(*),
-                actualCountPK = COUNT(DISTINCT CONCAT_WS('~',{%- for key in srcColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) ),
-                actualNullPK = SUM( CASE WHEN {% for key in srcColumnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+                actualCountPK = COUNT(DISTINCT CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) ),
+                actualNullPK = SUM( CASE WHEN {% for key in columnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
                 FROM [{{schemaName}}].[{{tableName}}])
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),

@@ -11,7 +11,8 @@
 {%- set spSchema = p.meta.object.spSchema -%}
 {%- set spName = p.meta.object.spName -%}
 {%- set integers = ['int', 'integer', 'numeric'] -%}
-{%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
+{%- set strings = ['varchar', 'nvarchar'] -%}
+{%- set largeObjects = ['varbinary'] -%}
 {%- set keyColumnName = p.meta.object.name+'Key' -%}
 IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL DROP PROCEDURE [{{spSchema}}].[{{spName}}];
 GO
@@ -54,14 +55,15 @@ BEGIN TRY
           SET @message = 'Create table [{{schemaName}}].[{{tableName}}]'
           CREATE TABLE [{{schemaName}}].[{{tableName}}] (
               [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-              {%- for key in srcColumns %}
+              {%- for key in columns %}
               [{{key.name}}] [{{key.dataType}}] 
               {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+              {%- elif key.dataType in strings and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
               {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
               {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
               {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
               {{- "," -}}
-              {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+              {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
               {% endfor %}
               rowHashType [varchar](40) NULL,
               rowChangeType varchar(1) NULL,
@@ -86,8 +88,9 @@ BEGIN TRY
               [{{keyColumnName}}] = -1,
               {%- for key in columns %} 
               [{{key.name}}] = {%- if (key.dataType in integers ) -%} -1, 
-                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength<7) -%} 'U', 
-                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
+                  {%- elif (key.dataType in largeObjects) -%} null, 
+                  {%- elif (key.dataType in strings and key.characterMaximumLength<7) -%} 'U', 
+                  {%- elif (key.dataType in strings and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
                   {%- else %} null, {%- endif %}
               {%- endfor %}
               rowHashType = '-1',
@@ -105,7 +108,7 @@ BEGIN TRY
         IF OBJECT_ID('tempdb..#{{schemaName}}_{{tableName}}_Staging') IS NOT NULL
             DROP TABLE #{{schemaName}}_{{tableName}}_Staging
 
-        CREATE TABLE #{{schemaName}}_{{tableName}}_Staging WITH (DISTRIBUTION = ROUND_ROBIN)
+        CREATE TABLE #{{schemaName}}_{{tableName}}_Staging WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
         AS
         SELECT 
             {% for key in srcColumns -%}
@@ -121,7 +124,7 @@ BEGIN TRY
         IF OBJECT_ID('tempdb..#{{schemaName}}_{{tableName}}_Upsert') IS NOT NULL
             DROP TABLE #{{schemaName}}_{{tableName}}_Upsert
 
-        CREATE TABLE #{{schemaName}}_{{tableName}}_Upsert WITH (DISTRIBUTION = ROUND_ROBIN) AS
+        CREATE TABLE #{{schemaName}}_{{tableName}}_Upsert WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS
         SELECT 
             {% for key in columns -%}
             [{{key.name}}] = stg.[{{key.name}}],
