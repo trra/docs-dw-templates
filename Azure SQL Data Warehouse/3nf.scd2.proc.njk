@@ -2,15 +2,16 @@
 {%- set schemaName = p.meta.destination[0].schemaName -%}
 {%- set tableName = p.meta.destination[0].tableName -%}
 {%- set columns = p.meta.destination[0].columns -%}
-{%- set srcSchemaName = p.meta.source[0].schemaName -%}
-{%- set srcTableName = p.meta.source[0].tableName -%}
+{%- set srcSchemaName = p.meta.source[0].table.schemaName -%}
+{%- set srcTableName = p.meta.source[0].table.tableName -%}
 {%- set srcColumns = p.meta.source[0].columns -%}
 {%- set srcColumnsPK = p.meta.source[0].columnsPK -%}
 {%- set objectName = p.meta.object.name -%}
 {%- set spSchema = p.meta.object.spSchema -%}
 {%- set spName = p.meta.object.spName -%}
 {%- set integers = ['int', 'integer', 'numeric'] -%}
-{%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
+{%- set strings = ['varchar', 'nvarchar'] -%}
+{%- set largeObjects = ['varbinary'] -%}
 {%- set keyColumnName = p.meta.object.name+'Key' -%}
 IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL DROP PROCEDURE [{{spSchema}}].[{{spName}}];
 GO
@@ -21,7 +22,7 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
     @scdDate     date
 AS
 {{ macro.comments (p,  
-  "Fetch data from source [{{ source[0].schemaName }}].[{{ source[0].tableName }}] into 3NF SCD Type 2 table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
+  "Fetch data from source [{{ source[0].table.schemaName }}].[{{ source[0].table.tableName }}] into 3NF SCD Type 2 table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
 --
 -- Execution sample:
 -- EXEC [{{object.spSchema}}].[{{object.spName}}] 'adminSession', 'ETL', NULL" | render(p.meta) | safe )  }}
@@ -56,14 +57,15 @@ BEGIN TRY
           SET @message = 'Create table [{{schemaName}}].[{{tableName}}]'
           CREATE TABLE [{{schemaName}}].[{{tableName}}] (
               [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-              {%- for key in srcColumns %}
+              {%- for key in columns %}
               [{{key.name}}] [{{key.dataType}}] 
               {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+              {%- elif key.dataType in strings and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
               {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
               {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
               {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
               {{- "," -}}
-              {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+              {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
               {% endfor %}
               scdCurrentFlag [varchar](1) NULL,
               scdStartDate [datetime] NULL,
@@ -92,8 +94,9 @@ BEGIN TRY
               [{{keyColumnName}}] = -1,
               {%- for key in columns %} 
               [{{key.name}}] = {%- if (key.dataType in integers ) -%} -1, 
-                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength<7) -%} 'U', 
-                  {%- elif (key.dataType in largeObjects and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
+                  {%- elif (key.dataType in largeObjects) -%} null, 
+                  {%- elif (key.dataType in strings and key.characterMaximumLength<7) -%} 'U', 
+                  {%- elif (key.dataType in strings and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
                   {%- else %} null, {%- endif %}
               {%- endfor %}
               scdCurrentFlag = 'Y',
@@ -122,7 +125,7 @@ BEGIN TRY
             {% endif -%}{%- endfor %}
         FROM [{{schemaName}}].[{{tableName}}]
         WHERE @scdDate BETWEEN scdStartDate AND scdEndDate) AA 
-        INNER JOIN [{{ schemaName }}].[{{ tableName }}] UPD ON {%- for key in srcColumnsPK %} AA.{{key.name}} = UPD.{{key.name}}{{' AND' if not loop.last }}{%- endfor %}
+        INNER JOIN [{{ schemaName }}].[{{ tableName }}] UPD ON {%- for key in columnsPK %} AA.{{key.name}} = UPD.{{key.name}}{{' AND' if not loop.last }}{%- endfor %}
 
         UPDATE [{{schemaName}}].[{{tableName}}]
         SET
@@ -133,7 +136,7 @@ BEGIN TRY
           dwPackageName = @packageName,
           dwUpdateDate = @now
         FROM [#ds2.1.{{srcSchemaName}}.{{srcTableName}}] AA
-        WHERE {%- for key in srcColumnsPK %} AA.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+        WHERE {%- for key in columnsPK %} AA.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
 
         -- update deleted records 
         UPDATE [{{schemaName}}].[{{tableName}}]
@@ -146,7 +149,7 @@ BEGIN TRY
           dwUpdateDate = @now
         WHERE NOT EXISTS (
             SELECT 1 FROM [{{srcSchemaName}}].[{{srcTableName}}] src
-            WHERE {%- for key in srcColumnsPK %} src.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+            WHERE {%- for key in columnsPK %} src.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
             )
 
         -- load new records
@@ -156,7 +159,7 @@ BEGIN TRY
             scdCurrentFlag, scdStartDate, scdEndDate, scdVersion, scdDeletedFlag, 
             dwSessionNo, dwPackageName, dwUpdateDate)
         SELECT
-            {% for key in columns -%}
+            {% for key in srcColumns -%}
             [{{columns[loop.index0].name}}] = src.[{{key.name}}],
             {% endfor -%}
             scdCurrentFlag = 'Y',
@@ -172,24 +175,24 @@ BEGIN TRY
             dwUpdateDate = @now
         FROM [{{srcSchemaName}}].[{{srcTableName}}] src
         LEFT OUTER JOIN ( --get last version
-          SELECT {% for key in srcColumnsPK -%}[{{key.name}}], {% endfor -%}
+          SELECT {% for key in columnsPK -%}[{{key.name}}], {% endfor -%}
             MAX(scdVersion) as scdVersion
           FROM [{{schemaName}}].[{{tableName}}] 
-          GROUP BY {% for key in srcColumnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %}
+          GROUP BY {% for key in columnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %}
         ) AS vers
-        ON {%- for key in srcColumnsPK %} vers.[{{key.name}}] = src.[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+        ON {%- for key in columnsPK %} vers.[{{key.name}}] = src.[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
         LEFT JOIN [{{schemaName}}].[{{tableName}}] ds 
-        ON {%- for key in srcColumnsPK %} src.[{{key.name}}] = ds.[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+        ON {%- for key in columnsPK %} src.[{{key.name}}] = ds.[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
         AND ds.scdCurrentFlag='Y'
-        WHERE ds.[{{srcColumnsPK[0].name}}] IS NULL
+        WHERE ds.[{{columnsPK[0].name}}] IS NULL
 
 
         -- update scdEndDate     
         IF OBJECT_ID('tempdb..[#ds2.2.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.2.{{srcSchemaName}}.{{srcTableName}}]
         CREATE TABLE [#ds2.2.{{srcSchemaName}}.{{srcTableName}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
-        AS SELECT {% for key in srcColumnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %}, 
+        AS SELECT {% for key in columnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %}, 
           scdVersion, 
-          scdEndDate = DATEADD(s, -1, LEAD(scdStartDate) OVER (PARTITION BY {% for key in srcColumnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %} ORDER BY scdVersion)) 
+          scdEndDate = DATEADD(s, -1, LEAD(scdStartDate) OVER (PARTITION BY {% for key in columnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %} ORDER BY scdVersion)) 
         FROM [{{schemaName}}].[{{tableName}}]
 
         UPDATE [{{schemaName}}].[{{tableName}}]
@@ -200,7 +203,7 @@ BEGIN TRY
           dwPackageName = @packageName,
           dwUpdateDate = @now
         FROM [#ds2.2.{{srcSchemaName}}.{{srcTableName}}] DD 
-        WHERE {%- for key in srcColumnsPK %} DD.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
+        WHERE {%- for key in columnsPK %} DD.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
           AND DD.scdVersion = [{{schemaName}}].[{{tableName}}].scdVersion 
 
 
@@ -216,8 +219,8 @@ BEGIN TRY
             Expect as (SELECT expectCount = count(*) FROM [{{srcSchemaName}}].[{{srcTableName}}]),
             Actual as (SELECT 
                 actualCount = count(*),
-                actualCountPK = COUNT(DISTINCT CONCAT_WS('~',{%- for key in srcColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) ),
-                actualNullPK = SUM( CASE WHEN {% for key in srcColumnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+                actualCountPK = COUNT(DISTINCT CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) ),
+                actualNullPK = SUM( CASE WHEN {% for key in columnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
                 FROM [{{schemaName}}].[{{tableName}}]
                 WHERE scdCurrentFlag = 'Y')
         SELECT 
@@ -257,7 +260,7 @@ BEGIN TRY
         DECLARE @checkOrphanRows varchar(250)
 
         ;WITH 
-        S as (SELECT id = CONCAT_WS('~',{%- for key in srcColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ), 
+        S as (SELECT id = CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ), 
             scdStartDate, scdEndDate, scdCurrentFlag 
             FROM [{{schemaName}}].[{{tableName}}]),
         TESTS AS (

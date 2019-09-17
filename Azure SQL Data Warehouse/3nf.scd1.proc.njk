@@ -3,8 +3,8 @@
 {%- set tableName = p.meta.destination[0].tableName -%}
 {%- set columns = p.meta.destination[0].columns -%}
 {%- set columnsPK = p.meta.destination[0].columnsPK -%}
-{%- set srcSchemaName = p.meta.source[0].schemaName -%}
-{%- set srcTableName = p.meta.source[0].tableName -%}
+{%- set srcSchemaName = p.meta.source[0].table.schemaName -%}
+{%- set srcTableName = p.meta.source[0].table.tableName -%}
 {%- set srcColumns = p.meta.source[0].columns -%}
 {%- set srcColumnsPK = p.meta.source[0].columnsPK -%}
 {%- set objectName = p.meta.object.name -%}
@@ -22,7 +22,7 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
     @packageName varchar(100)
 AS
 {{ macro.comments (p,  
-  "Fetch data from source [{{ source[0].schemaName }}].[{{ source[0].tableName }}] into 3NF SCD Type 1 table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
+  "Fetch data from source [{{ source[0].table.schemaName }}].[{{ source[0].table.tableName }}] into 3NF SCD Type 1 table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
 -- Uses Hash Key for comparison
 --
 -- Execution sample:
