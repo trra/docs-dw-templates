@@ -113,15 +113,15 @@ templates:
       - Destination Schema
       - Procedure Name
       - Naming Format
-  - name: "External: select external table source file"
+  - name: "External: create external BS table"
     <<: *defaults
     description: "Dynamically assign a source blob file"
-    templateFileName: Azure SQL Data Warehouse/external.table.select.njk
+    templateFileName: Azure SQL Data Warehouse/external.bs.select.njk
     outputFileName: /External/SProc/{spSchema}.{spName}.sql
     destSchema: ext
     destTable: "{objectName}"
-    spSchema: ext
-    spName: select.{objectName}
+    spSchema: "{destSchema}"
+    spName: bs.{objectName}
     objectNameMask: /raw_/g
     wizardQuestions:
       - Select Source Table

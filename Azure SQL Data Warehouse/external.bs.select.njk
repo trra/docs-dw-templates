@@ -1,0 +1,52 @@
+{%- import 'Azure SQL Data Warehouse/macro.njk' as macro -%}
+{%- set schemaName = p.meta.destination[0].schemaName -%}
+{%- set tableName = p.meta.destination[0].tableName -%}
+{%- set columns = p.meta.destination[0].columns -%}
+{%- set columnsPK = p.meta.destination[0].columnsPK -%}
+{%- set srcSchemaName = p.meta.source[0].table.schemaName -%}
+{%- set srcTableName = p.meta.source[0].table.tableName -%}
+{%- set srcColumns = p.meta.source[0].columns -%}
+{%- set srcColumnsPK = p.meta.source[0].columnsPK -%}
+{%- set objectName = p.meta.object.name -%}
+{%- set spSchema = p.meta.object.spSchema -%}
+{%- set spName = p.meta.object.spName -%}
+{%- set integers = ['int', 'integer', 'numeric'] -%}
+{%- set strings = ['varchar', 'nvarchar'] -%}
+{%- set largeObjects = ['varbinary'] -%}
+{%- set uids = ['uniqueidentifier'] -%}
+{%- set keyColumnName = p.meta.object.name+'Key' -%}
+IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL DROP PROCEDURE [{{spSchema}}].[{{spName}}];
+GO
+
+CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
+    @date   DATE
+AS
+{{ macro.comments (p,  
+  "Create external table [{{ destination[0].schemaName }}].[{{ destination[0].tableName }}]
+--
+-- Execution sample:
+-- EXEC [{{object.spSchema}}].[{{object.spName}}] 'adminSession', 'ETL'" | render(p.meta) | safe )  }}
+-- T      	2019-05-23	SA	unit tests - add [getRowLimit] call to get expected row count
+--
+DECLARE @location nvarchar(250) = CONCAT(N'/@restore/', CONVERT(nvarchar(10), @date, 111),'/{{srcTableName}}.orc');
+
+IF OBJECT_ID('[{{schemaName}}].[{{srcTableName}}]') IS NOT NULL DROP EXTERNAL TABLE [{{schemaName}}].[{{srcTableName}}] 
+DECLARE @sqlQuery nvarchar(max) = N'CREATE EXTERNAL TABLE [{{schemaName}}].[{{srcTableName}}] (
+    {%- for key in srcColumns %}
+    [{{key.name}}] {% if (key.dataType in uids) -%} [varchar](255){%- else -%} [{{key.dataType}}]{%- endif -%}
+    {# [{{key.dataType}}]  #}
+    {%- if (key.characterMaximumLength>0) -%} ({{-key.characterMaximumLength-}})
+    {%- elif (key.characterMaximumLength == -1) -%} (max)
+    {%- elif (key.numericPrecision > 0 and key.numericScale > 0) -%} ({{key.numericPrecision}},{{key.numericScale-}})
+    {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+    {{- ', ' if not loop.last -}}
+    {% endfor %}
+)
+    WITH (
+    LOCATION = '''+@location+''',
+    DATA_SOURCE = [bsDataSourceARC],
+    FILE_FORMAT = [fileFormatORC]
+)'
+
+EXECUTE sp_executesql @sqlQuery;
+
