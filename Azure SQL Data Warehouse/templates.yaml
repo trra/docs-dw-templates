@@ -12,7 +12,7 @@ templates:
     description: "3NF SCD Type 2 procedure"
     templateFileName: Azure SQL Data Warehouse/3nf.scd2.proc.njk
     outputFileName: "/3NF/SCD2 procedures/{destSchema}.sp{destTable}.sql"
-    destSchema: "dbo"
+    destSchema: "dimension schema for {srcSchema}"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
@@ -31,7 +31,7 @@ templates:
     description: "3NF SCD Type 1 procedure"
     templateFileName: Azure SQL Data Warehouse/3nf.scd1.proc.njk
     outputFileName: "/3NF/SCD1 procedures/{destSchema}.sp{destTable}.sql"
-    destSchema: "dbo"
+    destSchema: "dimension schema for {srcSchema}"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
@@ -50,7 +50,7 @@ templates:
     description: "3NF stage procedure"
     templateFileName: Azure SQL Data Warehouse/3nf.stage.proc.njk
     outputFileName: "/3NF/Stage procedures/{destSchema}.sp{destTable}.sql"
-    destSchema: "dbo"
+    destSchema: "stage schema for {srcSchema}"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
@@ -69,7 +69,7 @@ templates:
     description: "3NF Fact procedure (full load)"
     templateFileName: Azure SQL Data Warehouse/3nf.fact.proc.njk
     outputFileName: "/3NF/Fact procedures/{destSchema}.sp{destTable}.sql"
-    destSchema: "dbo"
+    destSchema: "fact schema for {srcSchema}"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
@@ -88,7 +88,7 @@ templates:
     description: "Dynamically assign a source blob file"
     templateFileName: Azure SQL Data Warehouse/external.bs.select.njk
     outputFileName: "/External/SProc/{spSchema}.{spName}.sql"
-    destSchema: ext
+    destSchema: "ext"
     destTable: "{objectName}"
     spSchema: "{destSchema}"
     spName: "bs.{objectName}"

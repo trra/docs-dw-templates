@@ -101,7 +101,7 @@ BEGIN TRY
                 actualCount = count(*),
                 actualCountPK = COUNT(DISTINCT CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) ),
                 actualNullPK = SUM( CASE WHEN {% for key in columnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
-                FROM [{{schemaName}}].[{{tableName}}])
+                FROM [{{schemaName}}].[{{tableNameNew}}])
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
             @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
