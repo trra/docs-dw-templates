@@ -7,29 +7,12 @@ defaultSettings: &defaults
 
 format: Azure SQL Data Warehouse
 templates:
-  - name: "Example: create table"
-    <<: *defaults
-    description: "Create standard staging table"
-    templateFileName: Azure SQL Data Warehouse/stage.table.create.njk
-    outputFileName: "/Stage/Table/{destSchema}.{destTable}.sql"
-    destSchema: stage
-    destTable: "{objectName}"
-    objectNameMask: <exclusionMaskArray>
-    wizardQuestions:
-      - Naming Format
-      - Select Source Table
-      - Select Source Columns
-      - Select Source PK Columns
-      - Object Name
-      - Procedure Name
-      - Destination Schema
-      - Destination Table
   - name: "3NF: SCD2 upsert procedure"
     <<: *defaults
     description: "3NF SCD Type 2 procedure"
     templateFileName: Azure SQL Data Warehouse/3nf.scd2.proc.njk
     outputFileName: "/3NF/SCD2 procedures/{destSchema}.sp{destTable}.sql"
-    destSchema: "asset"
+    destSchema: "dbo"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
@@ -48,7 +31,7 @@ templates:
     description: "3NF SCD Type 1 procedure"
     templateFileName: Azure SQL Data Warehouse/3nf.scd1.proc.njk
     outputFileName: "/3NF/SCD1 procedures/{destSchema}.sp{destTable}.sql"
-    destSchema: "asset"
+    destSchema: "dbo"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
@@ -62,12 +45,12 @@ templates:
       - Destination Schema
       - Destination Table
       - Procedure Name
-  - name: "3NF: stage upsert procedure"
+  - name: "3NF: Stage upsert procedure"
     <<: *defaults
     description: "3NF stage procedure"
     templateFileName: Azure SQL Data Warehouse/3nf.stage.proc.njk
     outputFileName: "/3NF/Stage procedures/{destSchema}.sp{destTable}.sql"
-    destSchema: "asset"
+    destSchema: "dbo"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
@@ -81,38 +64,25 @@ templates:
       - Destination Schema
       - Destination Table
       - Procedure Name
-  - name: "Stage: create table"
+  - name: "3NF: Fact upsert procedure"
     <<: *defaults
-    description: "Create standard staging table"
-    templateFileName: Azure SQL Data Warehouse/stage.table.create.njk
-    outputFileName: "/Stage/Table/{destSchema}.{destTable}.sql"
-    destSchema: "{destSchema}"
+    description: "3NF Fact procedure (full load)"
+    templateFileName: Azure SQL Data Warehouse/3nf.fact.proc.njk
+    outputFileName: "/3NF/Fact procedures/{destSchema}.sp{destTable}.sql"
+    destSchema: "dbo"
     destTable: "{ObjectName}"
-    objectNameMask: <exclusionMaskArray>
-    wizardQuestions:
-      - Select Source Table
-      - Select Source Columns
-      - Naming Format
-      - Object Name
-      - Destination Schema
-  - name: "Stage: table insert procedure"
-    <<: *defaults
-    description: "Standard staging table insert procedure"
-    templateFileName: Azure SQL Data Warehouse/stage.table.proc.njk
-    outputFileName: "/Stage/TableProc/{destSchema}.{destTable}.sql"
-    destSchema: "stage"
-    destTable: "{objectName}"
     spSchema: "{destSchema}"
-    spName: upd_{objectName}
+    spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
     wizardQuestions:
+      - Naming Format
       - Select Source Table
       - Select Source Columns
       - Select Source PK Columns
       - Object Name
       - Destination Schema
+      - Destination Table
       - Procedure Name
-      - Naming Format
   - name: "External: create external BS table"
     <<: *defaults
     description: "Dynamically assign a source blob file"
