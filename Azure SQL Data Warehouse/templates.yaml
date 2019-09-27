@@ -7,6 +7,25 @@ defaultSettings: &defaults
 
 format: Azure SQL Data Warehouse
 templates:
+  - name: "DIM: SCD2 upsert procedure"
+    <<: *defaults
+    description: "Dimension SCD Type 2 procedure"
+    templateFileName: Azure SQL Data Warehouse/dim.scd2.proc.njk
+    outputFileName: "/3NF/Dim SCD2 procedures/{destSchema}.sp{destTable}.sql"
+    destSchema: "dimension schema for {srcSchema}"
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Procedure Name
   - name: "3NF: SCD2 upsert procedure"
     <<: *defaults
     description: "3NF SCD Type 2 procedure"
