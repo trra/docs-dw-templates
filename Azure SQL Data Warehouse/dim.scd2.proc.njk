@@ -10,7 +10,7 @@
 {%- set objectName = p.meta.object.name -%}
 {%- set spSchema = p.meta.object.spSchema -%}
 {%- set spName = p.meta.object.spName -%}
-{%- set integers = ['int', 'integer', 'numeric'] -%}
+{%- set integers = ['int', 'integer', 'numeric', 'bigint'] -%}
 {%- set strings = ['varchar', 'nvarchar'] -%}
 {%- set largeObjects = ['varbinary'] -%}
 {%- set keyColumnName = p.meta.object.name+'Key' -%}
@@ -54,7 +54,7 @@ BEGIN TRY
 
         IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
         BEGIN
-          SET @message = 'Create table [{{schemaName}}].[{{tableName}}]'
+          SET @message = '-- Create table [{{schemaName}}].[{{tableName}}]'
           CREATE TABLE [{{schemaName}}].[{{tableName}}] (
               [{{keyColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
               {%- for key in columns %}
@@ -82,7 +82,7 @@ BEGIN TRY
 
         IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{keyColumnName}}] = -1) = 0
         BEGIN 
-          SET @message = 'Insert default -1 "Unknown" row'
+          SET @message = '[-----] Insert default -1 "Unknown" row'
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
           INSERT INTO [{{schemaName}}].[{{tableName}}]
             ( [{{keyColumnName}}], 
@@ -112,7 +112,7 @@ BEGIN TRY
           EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
         END
      
-        PRINT '-- 2.0 Create temp source table with foreign key(s)'
+        PRINT '-- Create temp source table with foreign key(s)'
         IF OBJECT_ID('tempdb..[#ds2.0.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.0.{{srcSchemaName}}.{{srcTableName}}]
         CREATE TABLE [#ds2.0.{{srcSchemaName}}.{{srcTableName}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
         AS SELECT 
@@ -120,7 +120,7 @@ BEGIN TRY
             {% endif -%}{%- endfor %}
         FROM [{{srcSchemaName}}].[{{srcTableName}}] src
 
-        PRINT '-- 2.1 Create temp table to update existing records'
+        PRINT '-- Create temp table to update existing records'
         IF OBJECT_ID('tempdb..[#ds2.1.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.1.{{srcSchemaName}}.{{srcTableName}}]
         CREATE TABLE [#ds2.1.{{srcSchemaName}}.{{srcTableName}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
         AS SELECT AA.*
@@ -162,7 +162,7 @@ BEGIN TRY
           dwPackageName = @packageName,
           dwUpdateDate = @now
         WHERE NOT EXISTS (
-            SELECT 1 FROM [{{srcSchemaName}}].[{{srcTableName}}] src
+            SELECT 1 FROM [#ds2.0.{{srcSchemaName}}.{{srcTableName}}] src
             WHERE {%- for key in columnsPK %} src.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]{{' AND' if not loop.last }}{%- endfor %}
             )
         AND [{{keyColumnName}}] != -1 AND scdEndDate = '9999-12-31 00:00:00.000'
@@ -222,8 +222,8 @@ BEGIN TRY
           AND DD.scdVersion = [{{schemaName}}].[{{tableName}}].scdVersion 
 
 
-        -- ************ UnitTests ****************                
-
+        PRINT '-- ************ UnitTests **************** '
+        
         DECLARE @checkTotalQuantity varchar(250)
         DECLARE @checkQuantityPK varchar(250)
         DECLARE @checkQuantityLimit varchar(250)
@@ -234,9 +234,9 @@ BEGIN TRY
             Expect as (SELECT expectCount = count(*) FROM [{{srcSchemaName}}].[{{srcTableName}}]),
             Actual as (SELECT 
                 actualCount = SUM(CASE WHEN [{{keyColumnName}}] = -1 THEN 0 ELSE 1 END),
-                actualCountKey = SUM(CASE WHEN [{{KeyColumnName}}] = -1 THEN 1 ELSE 0 END),
+                actualCountKey = SUM(CASE WHEN [{{keyColumnName}}] = -1 THEN 1 ELSE 0 END),
                 actualCountPK = COUNT(DISTINCT CASE
-                    WHEN [{{KeyColumnName}}] = -1 THEN NULL
+                    WHEN [{{keyColumnName}}] = -1 THEN NULL
                     ELSE CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ) END),
                 actualNullPK = SUM( CASE WHEN {% for key in columnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
                 FROM [{{schemaName}}].[{{tableName}}]
@@ -269,7 +269,7 @@ BEGIN TRY
         IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
         
         
-        -- ************ SCD2 UnitTests ****************         
+        PRINT '-- ************ SCD2 UnitTests ****************'
 
         DECLARE @checkCurrentFlag varchar(250)
         DECLARE @checkStartDate varchar(250)
@@ -337,11 +337,10 @@ BEGIN TRY
         IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
     
     
-        -- ************ Finalize transformation here ****************                
+        -- ************ Finalize transformation ****************
         IF OBJECT_ID('tempdb..[#ds2.1.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.1.{{srcSchemaName}}.{{srcTableName}}]
         IF OBJECT_ID('tempdb..[#ds2.2.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.2.{{srcSchemaName}}.{{srcTableName}}]
         
-
 
         -- ************ ETL code ends here ****************                
 
