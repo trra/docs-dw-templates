@@ -82,7 +82,7 @@ BEGIN TRY
 
         IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{keyColumnName}}] = -1) = 0
         BEGIN 
-          SET @message = '[-----] Insert default -1 "Unknown" row'
+          SET @message = '-- Insert default -1 "Unknown" row'
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
           INSERT INTO [{{schemaName}}].[{{tableName}}]
             ( [{{keyColumnName}}], 
@@ -93,10 +93,10 @@ BEGIN TRY
           SELECT 
               [{{keyColumnName}}] = -1,
               {%- for key in columns %} 
-              [{{key.name}}] = {%- if (key.dataType in integers ) -%} -1, 
-                  {%- elif (key.dataType in largeObjects) -%} null, 
-                  {%- elif (key.dataType in strings and key.characterMaximumLength<7) -%} 'U', 
-                  {%- elif (key.dataType in strings and key.characterMaximumLength>=7) -%} 'UNKNOWN', 
+              [{{key.name}}] = {%- if (key.dataType in integers ) %} -1, 
+                  {%- elif (key.dataType in largeObjects) %} null, 
+                  {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
+                  {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
                   {%- else %} null, {%- endif %}
               {%- endfor %}
               scdCurrentFlag = 'Y',
