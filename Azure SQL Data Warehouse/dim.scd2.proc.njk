@@ -112,7 +112,7 @@ BEGIN TRY
           EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
         END
      
-        PRINT '-- Create temp source table with foreign key(s)'
+        -- Create temp source table with foreign key(s)
         IF OBJECT_ID('tempdb..[#ds2.0.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.0.{{srcSchemaName}}.{{srcTableName}}]
         CREATE TABLE [#ds2.0.{{srcSchemaName}}.{{srcTableName}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
         AS SELECT 
@@ -120,7 +120,7 @@ BEGIN TRY
             {% endif -%}{%- endfor %}
         FROM [{{srcSchemaName}}].[{{srcTableName}}] src
 
-        PRINT '-- Create temp table to update existing records'
+        -- Create temp table to update existing records
         IF OBJECT_ID('tempdb..[#ds2.1.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.1.{{srcSchemaName}}.{{srcTableName}}]
         CREATE TABLE [#ds2.1.{{srcSchemaName}}.{{srcTableName}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
         AS SELECT AA.*
@@ -139,7 +139,7 @@ BEGIN TRY
         ON {%- for key in columnsPK %} AA.{{key.name}} = UPD.{{key.name}}{{' AND' if not loop.last }}{% if (loop.index % 4) === 0 %}
           {% endif -%}{%- endfor %}
 
-        PRINT '-- update inactive records'
+        -- update inactive records
         UPDATE [{{schemaName}}].[{{tableName}}]
         SET
           scdCurrentFlag = 'N',
@@ -152,7 +152,7 @@ BEGIN TRY
         WHERE {%- for key in columnsPK %} AA.[{{key.name}}] = [{{schemaName}}].[{{tableName}}].[{{key.name}}]
           {{' AND' if not loop.last }}{%- endfor %}
 
-        PRINT '-- update deleted records'
+        -- update deleted records
         UPDATE [{{schemaName}}].[{{tableName}}]
         SET
           scdCurrentFlag = 'N',
@@ -167,7 +167,7 @@ BEGIN TRY
             )
         AND [{{keyColumnName}}] != -1 AND scdEndDate = '9999-12-31 00:00:00.000'
 
-        PRINT '-- load new records'
+        -- load new records
         INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
             {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
             {% endif -%}{%- endfor %}
@@ -202,7 +202,7 @@ BEGIN TRY
         WHERE ds.[{{columnsPK[0].name}}] IS NULL
 
 
-        PRINT '-- update scdEndDate'
+        -- update scdEndDate
         IF OBJECT_ID('tempdb..[#ds2.2.{{srcSchemaName}}.{{srcTableName}}]') IS NOT NULL DROP TABLE [#ds2.2.{{srcSchemaName}}.{{srcTableName}}]
         CREATE TABLE [#ds2.2.{{srcSchemaName}}.{{srcTableName}}] WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
         AS SELECT {% for key in columnsPK %}[{{key.name}}]{{', ' if not loop.last }}{% endfor %}, 
@@ -222,9 +222,10 @@ BEGIN TRY
           AND DD.scdVersion = [{{schemaName}}].[{{tableName}}].scdVersion 
 
 
-        PRINT '-- ************ UnitTests **************** '
+        -- ************ UnitTests **************** 
         
         DECLARE @checkTotalQuantity varchar(250)
+        DECLARE @checkQuantityKey varchar(250)
         DECLARE @checkQuantityPK varchar(250)
         DECLARE @checkQuantityLimit varchar(250)
         DECLARE @checkNullPK varchar(250)
@@ -269,7 +270,7 @@ BEGIN TRY
         IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
         
         
-        PRINT '-- ************ SCD2 UnitTests ****************'
+        -- ************ SCD2 UnitTests ****************
 
         DECLARE @checkCurrentFlag varchar(250)
         DECLARE @checkStartDate varchar(250)
@@ -277,7 +278,7 @@ BEGIN TRY
         DECLARE @checkCardinality varchar(250)
 
         ;WITH 
-        S as (SELECT id = CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ), 
+        S as (SELECT keyId = [AssetKey], id = CONCAT_WS('~',{%- for key in columnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%}, '' ), 
           scdStartDate, scdEndDate, scdCurrentFlag 
           FROM [{{schemaName}}].[{{tableName}}]),
         DatePeriod as (
@@ -314,7 +315,7 @@ BEGIN TRY
             @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
             @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
             @checkDeletedRows = test.assertEqualsInt('checkDeletedRows (cnt_currentFlag = 0 & cnt_currentPeriod = 0)', 0, sum(cnt_deleted_rows)),
-            @checkCardinality = test.assertEqualsInt('checkCardinality ()', 0, sum(Cardinality.chk_cardinality))
+            @checkCardinality = test.assertEqualsInt('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
         FROM TESTS CROSS JOIN Cardinality
 
         -- Info
