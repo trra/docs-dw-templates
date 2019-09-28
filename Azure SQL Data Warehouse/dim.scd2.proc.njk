@@ -232,7 +232,7 @@ BEGIN TRY
         DECLARE @expectCountMin bigInt, @expectCountMax bigInt
         EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
         ;WITH 
-            Expect as (SELECT expectCount = count(*) FROM [{{srcSchemaName}}].[{{srcTableName}}]),
+            Expect as (SELECT expectCount = count(*) FROM [#ds2.0.{{srcSchemaName}}.{{srcTableName}}]),
             Actual as (SELECT 
                 actualCount = SUM(CASE WHEN [{{keyColumnName}}] = -1 THEN 0 ELSE 1 END),
                 actualCountKey = SUM(CASE WHEN [{{keyColumnName}}] = -1 THEN 1 ELSE 0 END),
