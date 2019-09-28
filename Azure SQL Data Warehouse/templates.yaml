@@ -11,7 +11,7 @@ templates:
     <<: *defaults
     description: "Dimension SCD Type 2 procedure"
     templateFileName: Azure SQL Data Warehouse/dim.scd2.proc.njk
-    outputFileName: "/3NF/Dim SCD2 procedures/{destSchema}.sp{destTable}.sql"
+    outputFileName: "/3NF/Dim SCD2 procedures/{destSchema}.sp{destTable}.scd2.sql"
     destSchema: "dimension schema for {srcSchema}"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -30,7 +30,7 @@ templates:
     <<: *defaults
     description: "3NF SCD Type 2 procedure"
     templateFileName: Azure SQL Data Warehouse/3nf.scd2.proc.njk
-    outputFileName: "/3NF/SCD2 procedures/{destSchema}.sp{destTable}.sql"
+    outputFileName: "/3NF/SCD2 procedures/{destSchema}.sp{destTable}.scd2.sql"
     destSchema: "dimension schema for {srcSchema}"
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
