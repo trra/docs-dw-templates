@@ -7,7 +7,7 @@ defaultSettings: &defaults
 
 format: SQL Azure
 templates:
-- name: "3NF: Stage upsert procedure"
+  - name: "3NF: Stage upsert procedure"
     <<: *defaults
     description: "3NF stage procedure"
     templateFileName: "SQL Azure/3nf.stage.proc.njk"
@@ -26,4 +26,3 @@ templates:
       - Destination Schema
       - Destination Table
       - Procedure Name
-  
