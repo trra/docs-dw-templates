@@ -1,24 +1,29 @@
 defaultSettings: &defaults
-  author: '{USERDOMAIN}\\{USERNAME}'
+  author: <author>
   license: MIT License
-  version: ~0.1.0
+  version: ~0.1.8
   projectName: <projectName>
   createdAt: <currentDate>
 
 format: SQL Azure
 templates:
-  - name: 'Stage: create table'
+- name: "3NF: Stage upsert procedure"
     <<: *defaults
-    description: 'Create standard staging table'
-    templateFileName: SQL Azure/stage.table.create.njk
-    outputFileName: /Stage/Table/<destSchema>.<destTable>.sql
-    destSchema: stage
-    destTable: '{objectName}.{sequenceNo}'
-    objectNameMask:
+    description: "3NF stage procedure"
+    templateFileName: "SQL Azure/3nf.stage.proc.njk"
+    outputFileName: "/3NF/Stage procedures/{destSchema}.sp{destTable}.sql"
+    destSchema: "stage schema for {srcSchema}"
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
     wizardQuestions:
+      - Naming Format
       - Select Source Table
       - Select Source Columns
+      - Select Source PK Columns
       - Object Name
       - Destination Schema
-      - Set Column Name format
+      - Destination Table
+      - Procedure Name
   
