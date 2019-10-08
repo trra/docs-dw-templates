@@ -40,7 +40,7 @@ DECLARE @sessionStatus varchar(50)
 PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 BEGIN TRY
     -- add all manual dependencies here
-    {%- if srcTables %}
+    {% if srcTables %}
     {%- for srcTable in srcTables -%}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
     {% endfor %}
@@ -90,11 +90,11 @@ BEGIN TRY
             dwPackageName = @packageName,
             dwUpdateDate = @now
         FROM {% if query %} (
-            {{query | indent(12)}}
+            {{query | indent(12) -}}
             ) src
             {%- else -%}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
-            {%- endif -%}
+            {%- endif %}
         
 
         -- ************ UnitTests ****************                
