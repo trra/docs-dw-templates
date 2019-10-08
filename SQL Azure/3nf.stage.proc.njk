@@ -44,7 +44,7 @@ BEGIN TRY
     {%- for srcTable in srcTables -%}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
     {% endfor %}
-    {% else %}
+    {%- else -%}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
     {%- endif %}
     -- always check for session status AFTER adding new dependencies
@@ -89,12 +89,12 @@ BEGIN TRY
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
             dwUpdateDate = @now
-        FROM {%- if query -%}(
-            {{query | indent(9)}}
+        FROM {% if query %} (
+            {{query | indent(12)}}
             ) src
-            {% else %}
+            {%- else -%}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
-            {%- endif %}
+            {%- endif -%}
         
 
         -- ************ UnitTests ****************                
