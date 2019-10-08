@@ -115,8 +115,8 @@ BEGIN TRY
             [{{columns[loop.index0].name}}] = src.[{{key.name}}],
             {% endfor -%}
             rowChangeType = 'I',
-            rowHashType1 = CONVERT(CHAR(40), hashBytes('SHA1', CONVERT(NVARCHAR(MAX), 
-                CONCAT_WS('~',{%- for key in srcColumns -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%} ))), 2)            
+            rowHashType1 = CONVERT(CHAR(40), hashBytes('SHA2_256', CONVERT(NVARCHAR(MAX), 
+                CONCAT_WS('~',{%- for key in srcColumns -%}[{{key.name}}]{{-', ' if not loop.last -}}{%- endfor -%},''))), 2)            
         FROM [{{srcSchemaName}}].[{{srcTableName}}] src
 
         --  Now compare new Hash values in temp staging above with hash values for existing data in the dimension to identify rows that have changed

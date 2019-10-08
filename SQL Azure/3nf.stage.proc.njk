@@ -83,9 +83,9 @@ BEGIN TRY
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
             dwUpdateDate = @now
-        FROM {%- if query -%}
+        FROM {%- if query %}
             ({{query}}) src
-            {%- else -%}
+            {%- else %}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
             {%- endif -%}
         
