@@ -6,7 +6,7 @@
 {%- set srcSchemaName = p.meta.source.table.schemaName -%}
 {%- set srcTableName = p.meta.source.table.tableName -%}
 {%- set query = p.meta.source.query -%}
-{%- set srcTables = p.meta.source.queryTables -%}
+{%- set srcTables = p.meta.source.sourceTables -%}
 {%- set srcColumns = p.meta.source.columns -%}
 {%- set srcColumnsPK = p.meta.source.columnsPK -%}
 {%- set objectName = p.meta.object.name -%}
@@ -40,7 +40,13 @@ DECLARE @sessionStatus varchar(50)
 PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 BEGIN TRY
     -- add all manual dependencies here
+    {%- if srcTables %}
+    {%- for srcTable in srcTables %}
+    EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
+    {% endfor %}
+    {% else %}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
+    {% endif %}
     -- always check for session status AFTER adding new dependencies
     EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
 
@@ -85,9 +91,9 @@ BEGIN TRY
             dwUpdateDate = @now
         FROM {%- if query %}
             ({{query}}) src
-            {%- else %}
+            {% else %}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
-            {%- endif -%}
+            {% endif %}
         
 
         -- ************ UnitTests ****************                
