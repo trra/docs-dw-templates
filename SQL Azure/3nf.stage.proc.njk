@@ -41,12 +41,12 @@ PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 BEGIN TRY
     -- add all manual dependencies here
     {%- if srcTables %}
-    {%- for srcTable in srcTables %}
+    {%- for srcTable in srcTables -%}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
     {% endfor %}
     {% else %}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
-    {% endif %}
+    {%- endif %}
     -- always check for session status AFTER adding new dependencies
     EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
 
@@ -89,11 +89,12 @@ BEGIN TRY
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
             dwUpdateDate = @now
-        FROM {%- if query %}
-            ({{query}}) src
+        FROM {%- if query -%}(
+            {{query | indent(9)}}
+            ) src
             {% else %}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
-            {% endif %}
+            {%- endif %}
         
 
         -- ************ UnitTests ****************                
