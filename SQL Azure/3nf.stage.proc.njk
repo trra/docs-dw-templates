@@ -90,7 +90,7 @@ BEGIN TRY
             dwPackageName = @packageName,
             dwUpdateDate = @now
         FROM {% if query %} (
-            {{query + "/n) src" | indent(12) }}
+            {{query | indent(12) -}}) src
             {%- else -%}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
             {%- endif %}
