@@ -43,7 +43,7 @@ BEGIN TRY
     {% if srcTables %}
     {%- for srcTable in srcTables -%}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
-    {% endfor %}
+    {% endfor -%}
     {%- else -%}
     EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
     {%- endif %}
@@ -89,8 +89,9 @@ BEGIN TRY
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
             dwUpdateDate = @now
-        FROM {% if query %} (
-            {{query | indent(12) -}}) src
+        FROM {% if query %}(
+            {{query | indent(12)}}
+            ) src
             {%- else -%}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
             {%- endif %}
