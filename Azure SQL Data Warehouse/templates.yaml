@@ -118,3 +118,22 @@ templates:
       - Object Name
       - Destination Schema
       - Procedure Name
+  - name: "Data Domain: Master Data"
+    <<: *defaults
+    description: "Master Data table with history"
+    templateFileName: Azure SQL Data Warehouse/domain.master.njk
+    outputFileName: "/3NF/domain/masterData/{destSchema}.sp{destTable}.sql"
+    destSchema: "{destSchema}"
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Procedure Name

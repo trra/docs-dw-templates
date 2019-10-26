@@ -91,7 +91,7 @@ BEGIN TRY
             dwUpdateDate = @now
         FROM {% if query %}(
             {{query | indent(12)}}
-            ) src
+        ) src
             {%- else -%}
             [{{srcSchemaName}}].[{{srcTableName}}] AS src
             {%- endif %}

@@ -303,7 +303,7 @@ BEGIN TRY
           SELECT chk_cardinality = coalesce(SUM(countRows),0) FROM (
             SELECT d.DateAlternateKey, s.id, COUNT(*) as countRows
             FROM s 
-            JOIN reference.Date d ON d.dateAlternateKey between s.scdStartDate AND s.scdEndDate
+            JOIN reference.Date d ON d.dateAlternateKey between dateAdd(day, -3, @scdDate) AND s.scdEndDate
             JOIN DatePeriod ON d.DateAlternateKey between DatePeriod.fromDate and DatePeriod.toDate
             GROUP BY d.DateAlternateKey, s.id
             HAVING COUNT(*)>1 
