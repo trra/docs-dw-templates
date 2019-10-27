@@ -141,18 +141,18 @@ BEGIN TRY
           SELECT DISTINCT 
             systemKey, bkColumnName, bkValue, 
             [dataType] = CASE bkColumnName 
-              {% for key in srcColumnsPK -%}WHEN '{{columns[loop.index0].name}}' THEN {%- if key.dataType in integers %} 'int'
+              {% for key in srcColumnsPK -%}WHEN '{{columns[loop.index0].name}}' THEN 
+              {%- if key.dataType in integers %} 'int'
               {%- elif key.dataType in strings %} 'string'
               {%- elif key.dataType in dates %} 'date'
               {%- elif key.dataType in times %} 'time'
               {%- elif key.dataType in datetimes %} 'datetime'
               {%- endif -%}{% endfor %}
-              ELSE '' END,
+              ELSE 'string' END,
             bkHash
           FROM (
             SELECT 
               systemKey = s.[systemKey],
-              {# [CreatedOn] = convert(nvarchar(100), [CreatedOn], 121), #}
               {% for key in srcColumnsPK -%}
               [{{columns[loop.index0].name}}] = convert(nvarchar(100), src.[{{key.name}}]
               {%- if key.dataType in dates %}, 23
@@ -160,15 +160,12 @@ BEGIN TRY
               {%- elif key.dataType in datetimes %}, 121
               {%- endif -%}),
               {% endfor -%}
-              bkHash = CONVERT(CHAR(40), hashBytes('SHA2_256', CONVERT(NVARCHAR(MAX), concat_ws(@separator, 
+              bkHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), concat_ws(@separator, 
                 src.[systemCode], {% for key in srcColumnsPK -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% endfor -%}
                 ))), 2)
-            FROM {% if query %}({{query | indent(12)}}) src
-            {%- else -%}
-            [{{srcSchemaName}}].[{{srcTableName}}] AS src
-            {%- endif %} 
+            FROM {% if query %}({{query | indent(12)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} src
             JOIN mk.system s ON s.[systemCode] = src.[systemCode]
-            WHERE {% for key in srcColumnsPK -%}([{{columns[loop.index0].name}}] is not null){{-' AND ' if not loop.last -}}{% endfor -%}
+            WHERE {% for key in srcColumnsPK -%}([{{columns[loop.index0].name}}] IS NOT NULL){{-' AND ' if not loop.last -}}{% endfor -%}
             ) P
           UNPIVOT (bkValue FOR bkColumnName IN ({% for key in srcColumnsPK -%}[{{columns[loop.index0].name}}]{{-', ' if not loop.last -}}{% endfor -%})) as unP)
         SELECT 
@@ -196,21 +193,18 @@ BEGIN TRY
         SELECT 
           [{{mkColumnName}}] = ISNULL(MasterKeys.[mkValue],-1),
           {% for key in srcColumns -%}
-          [{{columns[loop.index0].name}}] = src.[{{key.name}}],
+          [{{columnsAll[loop.index0].name}}] = src.[{{key.name}}],
           {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
           {% endfor -%}
-          dwHash = CONVERT(CHAR(40), hashBytes('SHA2_256', CONVERT(NVARCHAR(MAX), 
+          dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(MAX), 
             concat_ws(@separator, {% for key in srcColumns -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% endfor -%}))), 2)
-        FROM {% if query %}(
-          {{query | indent(10)}}) src
-          {%- else -%}[{{srcSchemaName}}].[{{srcTableName}}] AS src
-          {%- endif %}
+        FROM {% if query %}({{query | indent(10)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} src
         JOIN (SELECT DISTINCT bkHash, mkValue
           FROM mk.businessKey bKey
           JOIN mk.masterKey mKey ON bKey.mkId = mKey.mkId
           WHERE mKey.mkColumnName = @mkColumnName AND mKey.domainKey = @domainKey
         ) MasterKeys 
-        ON MasterKeys.bkHash = CONVERT(CHAR(40), hashBytes('SHA2_256', CONVERT(NVARCHAR(MAX), concat_ws(@separator, 
+        ON MasterKeys.bkHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(MAX), concat_ws(@separator, 
             src.[systemCode], {% for key in srcColumnsPK -%}src.[{{columns[loop.index0].name}}]{{-', ' if not loop.last -}}{% endfor -%}
             ))), 2)
         
@@ -383,14 +377,14 @@ BEGIN TRY
                 actualCountKey = SUM(CASE WHEN [{{skColumnName}}] = -1 THEN 1 ELSE 0 END),
                 actualCountPK = COUNT(DISTINCT CASE
                     WHEN [{{skColumnName}}] = -1 THEN NULL
-                    ELSE CONCAT_WS(@separator, sink.[{{mkColumnName}}], '' ) END),
-                actualNullPK = SUM( CASE WHEN (sink.[{{mkColumnName}}] is null ) THEN 1 ELSE 0 END )
+                    ELSE concat_ws(@separator, sink.[{{mkColumnName}}], '' ) END),
+                actualNullPK = SUM(CASE WHEN sink.[{{mkColumnName}}] IS NULL THEN 1 ELSE 0 END )
                 FROM [{{schemaName}}].[{{tableName}}] sink INNER JOIN #stage src ON sink.[{{mkColumnName}}] = src.[{{mkColumnName}}])
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
             @checkQuantityKey = test.assertEqualsInt('checkQuantityKey (destination dimKey = 1)', 1, actualCountKey),
             @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
-            @checkQuantityLimit = test.assertTrue(CONCAT('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
+            @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
                 CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
             @checkNullPK = test.assertEqualsInt('checkNullPK (PK has NULL values)', 0, actualNullPK),
             @rowsRead = expectCount, @rowsWritten = actualCount
@@ -422,10 +416,10 @@ BEGIN TRY
         DECLARE @checkCardinality varchar(250)
 
         ;WITH 
-        S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = CONCAT_WS(@separator, [{{mkColumnName}}], '' ), 
+        S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
           dwStartDate, dwEndDate, dwIsCurrent = 0
           FROM [{{schemaName}}].[{{tableName}}History] UNION
-          SELECT keyId = concat('C',[{{skColumnName}}]), id = CONCAT_WS(@separator, [{{mkColumnName}}], '' ), 
+          SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
           dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1
           FROM [{{schemaName}}].[{{tableName}}]),
         DatePeriod as (
