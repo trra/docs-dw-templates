@@ -3,6 +3,7 @@
 {%- set tableName = p.meta.destination.tableName -%}
 {%- set columns = p.meta.destination.columns -%}
 {%- set columnsPK = p.meta.destination.columnsPK -%}
+{%- set columnsAll = p.meta.destination.columnsAll -%}
 {%- set srcSchemaName = p.meta.source.table.schemaName -%}
 {%- set srcTableName = p.meta.source.table.tableName -%}
 {%- set query = p.meta.source.query -%}
@@ -134,20 +135,21 @@ BEGIN TRY
         EXEC reference.printLine 'Create #busnessKeys'
         -- Create #busnessKeys temp table to generate master keys in MK Factory
         DECLARE @domainKey int = (SELECT domainKey FROM mk.[domain] WHERE [domainCode] = @domainCode and [version] = @version)
+        IF @domainKey IS NULL RAISERROR ('Specified @domainCode value does not exist in [mk].[domain] table.', 15, 105)
 
         IF OBJECT_ID('tempdb..#businessKeys') IS NOT NULL DROP TABLE #businessKeys
         CREATE TABLE #businessKeys WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
         WITH Types as (
-          SELECT DISTINCT 
-            systemKey, bkColumnName, bkValue, 
-            [dataType] = CASE bkColumnName 
-              {% for key in srcColumnsPK -%}WHEN '{{columns[loop.index0].name}}' THEN 
+          SELECT DISTINCT
+            systemKey, bkColumnName, bkValue,
+            [dataType] = CASE bkColumnName
+              {% for key in srcColumnsPK %}WHEN '{{columns[loop.index0].name}}' THEN 
               {%- if key.dataType in integers %} 'int'
               {%- elif key.dataType in strings %} 'string'
               {%- elif key.dataType in dates %} 'date'
               {%- elif key.dataType in times %} 'time'
               {%- elif key.dataType in datetimes %} 'datetime'
-              {%- endif -%}{% endfor %}
+              {%- endif %}{% endfor %}
               ELSE 'string' END,
             bkHash
           FROM (
@@ -161,9 +163,15 @@ BEGIN TRY
               {%- endif -%}),
               {% endfor -%}
               bkHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), concat_ws(@separator, 
-                src.[systemCode], {% for key in srcColumnsPK -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% endfor -%}
+                src.[systemCode], {%- for key in srcColumnsPK -%}
+                {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
+                {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
+                {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
+                {%- else %} src.[{{key.name}}]
+                {%- endif -%}),
+                {{-', ' if not loop.last -}}{%- endfor -%}
                 ))), 2)
-            FROM {% if query %}({{query | indent(12)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} src
+            FROM {% if query %}({{query | indent(14)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} {{'src' | indent(14)}}
             JOIN mk.system s ON s.[systemCode] = src.[systemCode]
             WHERE {% for key in srcColumnsPK -%}([{{columns[loop.index0].name}}] IS NOT NULL){{-' AND ' if not loop.last -}}{% endfor -%}
             ) P

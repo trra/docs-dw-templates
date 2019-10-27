@@ -123,7 +123,7 @@ templates:
     description: "Master Data table with history"
     templateFileName: Azure SQL Data Warehouse/domain.master.njk
     outputFileName: "/3NF/domain/masterData/{destSchema}.sp{destTable}.sql"
-    destSchema: "{destSchema}"
+    destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
