@@ -136,4 +136,5 @@ templates:
       - Object Name
       - Destination Schema
       - Destination Table
+      - Select Destination Columns
       - Procedure Name
