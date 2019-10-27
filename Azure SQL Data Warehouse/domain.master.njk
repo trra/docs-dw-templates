@@ -174,7 +174,7 @@ BEGIN TRY
                 {%- endfor -%}
                 ))), 2)
             FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}] src
-              {% else %}({{query | indent(14, true)}}) src{%- endif %}
+              {% else %}({{query | safe | indent(14, true) }}) src{%- endif %}
             JOIN mk.system s ON s.[systemCode] = src.[systemCode]
             WHERE {% for key in srcColumnsPK -%}([{{key.name}}] IS NOT NULL){{-' AND ' if not loop.last -}}{% endfor -%}
             ) P
@@ -210,7 +210,7 @@ BEGIN TRY
           dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(MAX), 
             concat_ws(@separator, {% for key in srcColumns -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 %}
             {% endif -%}{% endfor -%}))), 2)
-        FROM {% if query %}({{query | indent(10)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} src
+        FROM {% if query %}({{query | safe | indent(10)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} src
         JOIN (SELECT DISTINCT bkHash, mkValue
           FROM mk.businessKey bKey
           JOIN mk.masterKey mKey ON bKey.mkId = mKey.mkId
