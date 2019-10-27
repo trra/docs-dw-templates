@@ -143,7 +143,7 @@ BEGIN TRY
           SELECT DISTINCT
             systemKey, bkColumnName, bkValue,
             [dataType] = CASE bkColumnName
-              {% for key in srcColumnsPK %}WHEN '{{columns[loop.index0].name}}' THEN 
+              {% for key in srcColumnsPK %}WHEN '{{key.name}}' THEN 
               {%- if key.dataType in integers %} 'int'
               {%- elif key.dataType in strings %} 'string'
               {%- elif key.dataType in dates %} 'date'
@@ -156,26 +156,28 @@ BEGIN TRY
             SELECT 
               systemKey = s.[systemKey],
               {% for key in srcColumnsPK -%}
-              [{{columns[loop.index0].name}}] = convert(nvarchar(100), src.[{{key.name}}]
+              [{{key.name}}] = convert(nvarchar(100), src.[{{key.name}}]
               {%- if key.dataType in dates %}, 23
               {%- elif key.dataType in times %}, 114
               {%- elif key.dataType in datetimes %}, 121
               {%- endif -%}),
               {% endfor -%}
               bkHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), concat_ws(@separator, 
-                src.[systemCode], {%- for key in srcColumnsPK -%}
+                src.[systemCode], 
+                {%- for key in srcColumnsPK -%}
                 {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
                 {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
                 {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
                 {%- else %} src.[{{key.name}}]
-                {%- endif -%}),
+                {%- endif -%}), {% if (loop.index % 3) === 0 %}
+                {% endif -%}
                 {{-', ' if not loop.last -}}{%- endfor -%}
                 ))), 2)
             FROM {% if query %}({{query | indent(14)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} {{'src' | indent(14)}}
             JOIN mk.system s ON s.[systemCode] = src.[systemCode]
-            WHERE {% for key in srcColumnsPK -%}([{{columns[loop.index0].name}}] IS NOT NULL){{-' AND ' if not loop.last -}}{% endfor -%}
+            WHERE {% for key in srcColumnsPK -%}([{{key.name}}] IS NOT NULL){{-' AND ' if not loop.last -}}{% endfor -%}
             ) P
-          UNPIVOT (bkValue FOR bkColumnName IN ({% for key in srcColumnsPK -%}[{{columns[loop.index0].name}}]{{-', ' if not loop.last -}}{% endfor -%})) as unP)
+          UNPIVOT (bkValue FOR bkColumnName IN ({% for key in srcColumnsPK -%}[{{key.name}}]{{-', ' if not loop.last -}}{% endfor -%})) as unP)
         SELECT 
           systemKey = Types.[systemKey],
           domainKey = @domainKey,
@@ -201,20 +203,24 @@ BEGIN TRY
         SELECT 
           [{{mkColumnName}}] = ISNULL(MasterKeys.[mkValue],-1),
           {% for key in srcColumns -%}
-          [{{columnsAll[loop.index0].name}}] = src.[{{key.name}}],
+          [{{key.name}}] = src.[{{key.name}}],
           {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
           {% endfor -%}
           dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(MAX), 
-            concat_ws(@separator, {% for key in srcColumns -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% endfor -%}))), 2)
+            concat_ws(@separator, {% for key in srcColumns -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 %}
+            {% endif -%}{% endfor -%}))), 2)
         FROM {% if query %}({{query | indent(10)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} src
         JOIN (SELECT DISTINCT bkHash, mkValue
           FROM mk.businessKey bKey
           JOIN mk.masterKey mKey ON bKey.mkId = mKey.mkId
           WHERE mKey.mkColumnName = @mkColumnName AND mKey.domainKey = @domainKey
         ) MasterKeys 
-        ON MasterKeys.bkHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(MAX), concat_ws(@separator, 
-            src.[systemCode], {% for key in srcColumnsPK -%}src.[{{columns[loop.index0].name}}]{{-', ' if not loop.last -}}{% endfor -%}
-            ))), 2)
+        ON MasterKeys.bkHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(MAX), 
+          concat_ws(@separator, 
+            src.[systemCode], 
+            {% for key in srcColumnsPK -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 %}
+            {% endif -%}{% endfor -%}
+          ))), 2)
         
         IF (@sinkObjectCode != @objectCode) BEGIN
           SET @message = concat('Restore initial state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
@@ -260,10 +266,12 @@ BEGIN TRY
             AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
 
           INSERT INTO [{{schemaName}}].[{{tableName}}] (
-            [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}],{% endfor -%}
+            [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+            {% endif -%}{% endfor -%}
             dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
           )
-          SELECT [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}],{% endfor -%}
+          SELECT [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+            {% endif -%}{% endfor -%}
             dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
           FROM #current
         END
@@ -292,7 +300,8 @@ BEGIN TRY
           EXEC reference.printLine 'Full Load: Insert into [{{schemaName}}].[{{tableName}}History] deleted rows'
           -- load new records
           INSERT INTO #upsert (
-            [{{skColumnName}}], [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}],{% endfor %}
+            [{{skColumnName}}], [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+            {% endif -%}{% endfor %}
             dwRowChangeType, dwHash, dwLastVersion 
             )
           SELECT
@@ -319,7 +328,8 @@ BEGIN TRY
         EXEC reference.printLine 'Insert into [{{schemaName}}].[{{tableName}}History]'
         -- load new records
         INSERT INTO [{{schemaName}}].[{{tableName}}History] ( 
-          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}],{% endfor %} 
+          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+          {% endif -%}{% endfor %} 
           dwSessionNo, dwPackageName, dwIsLastVersion, dwIsDeleted, 
           dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
         SELECT
@@ -342,7 +352,8 @@ BEGIN TRY
         EXEC reference.printLine 'Insert [{{schemaName}}].[{{tableName}}]'
         -- load new records
         INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}],{% endfor %} 
+          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+          {% endif -%}{% endfor %} 
           dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
           )
         SELECT
