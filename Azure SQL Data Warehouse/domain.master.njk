@@ -169,11 +169,12 @@ BEGIN TRY
                 {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
                 {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
                 {%- else %} src.[{{key.name}}]
-                {%- endif -%}), {% if (loop.index % 3) === 0 %}
+                {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 and not loop.lasts %}
                 {% endif -%}
-                {{-', ' if not loop.last -}}{%- endfor -%}
+                {%- endfor -%}
                 ))), 2)
-            FROM {% if query %}({{query | indent(14)}}){%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} {{'src' | indent(14)}}
+            FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}] src
+              {% else %}({{query | indent(14, true)}}) src{%- endif %}
             JOIN mk.system s ON s.[systemCode] = src.[systemCode]
             WHERE {% for key in srcColumnsPK -%}([{{key.name}}] IS NOT NULL){{-' AND ' if not loop.last -}}{% endfor -%}
             ) P
