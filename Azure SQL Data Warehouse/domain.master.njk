@@ -13,7 +13,7 @@
 {%- set objectName = p.meta.object.name -%}
 {%- set spSchema = p.meta.object.spSchema -%}
 {%- set spName = p.meta.object.spName -%}
-{%- set integers = ['int', 'integer', 'numeric'] -%}
+{%- set numbers = ['bit', 'int', 'integer', 'numeric', 'decimal', 'float', 'bigint', 'smallint', 'tinyint'] -%}
 {%- set strings = ['varchar', 'nvarchar', 'char', 'nchar'] -%}
 {%- set dates = ['date'] -%}
 {%- set times = ['time'] -%}
@@ -84,23 +84,23 @@ BEGIN TRY
         BEGIN
           EXEC reference.printLine 'Create table [{{schemaName}}].[{{tableName}}]'
           CREATE TABLE [{{schemaName}}].[{{tableName}}] (
-              [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-              [{{mkColumnName}}] [bigint] NOT NULL,
-              {%- for key in columns %}
-              [{{key.name}}] [{{key.dataType}}] 
-              {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
-              {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
-              {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
-              {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
-              {{- "," -}}
-              {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
-              {% endfor %}
-              dwSessionNo [varchar](50) NOT NULL,
-              dwPackageName [varchar](100) NOT NULL,
-              dwStartDate [datetime] NOT NULL,
-              dwVersion [int] NOT NULL,
-              dwUpdateDate [datetime] NOT NULL,
-              dwHash [varchar](40) NOT NULL
+            [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
+            [{{mkColumnName}}] [bigint] NOT NULL,
+            {%- for key in columns %}
+            [{{key.name}}] [{{key.dataType}}] 
+            {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+            {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
+            {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+            {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+            {{- "," -}}
+            {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+            {% endfor %}
+            dwSessionNo [varchar](50) NOT NULL,
+            dwPackageName [varchar](100) NOT NULL,
+            dwStartDate [datetime] NOT NULL,
+            dwVersion [int] NOT NULL,
+            dwUpdateDate [datetime] NOT NULL,
+            dwHash [varchar](40) NOT NULL
           ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
           -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
         END
@@ -108,28 +108,55 @@ BEGIN TRY
         BEGIN
           EXEC reference.printLine 'Create table [{{schemaName}}].[{{tableName}}History]'
           CREATE TABLE [{{schemaName}}].[{{tableName}}History] (
-              [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-              [{{mkColumnName}}] [bigint] NOT NULL,
-              {%- for key in columns %}
-              [{{key.name}}] [{{key.dataType}}] 
-              {%- if key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
-              {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
-              {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
-              {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
-              {{- "," -}}
-              {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
-              {% endfor %}
-              dwSessionNo [varchar](50) NOT NULL,
-              dwPackageName [varchar](100) NOT NULL,
-              dwIsDeleted [bit] NOT NULL,
-              dwStartDate [datetime] NOT NULL,
-              dwEndDate [datetime] NOT NULL,
-              dwIsLastVersion [bit] NOT NULL,
-              dwVersion [int] NOT NULL,
-              dwUpdateDate [datetime] NOT NULL,
-              dwHash [varchar](40) NOT NULL
+            [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
+            [{{mkColumnName}}] [bigint] NOT NULL,
+            {%- for key in columns %}
+            [{{key.name}}] [{{key.dataType}}] 
+            {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+            {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
+            {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+            {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+            {{- "," -}}
+            {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+            {% endfor %}
+            dwSessionNo [varchar](50) NOT NULL,
+            dwPackageName [varchar](100) NOT NULL,
+            dwIsDeleted [bit] NOT NULL,
+            dwStartDate [datetime] NOT NULL,
+            dwEndDate [datetime] NOT NULL,
+            dwIsLastVersion [bit] NOT NULL,
+            dwVersion [int] NOT NULL,
+            dwUpdateDate [datetime] NOT NULL,
+            dwHash [varchar](40) NOT NULL
           ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
-          -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+        END
+
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{mkColumnName}}] = -1) = 0
+        BEGIN 
+          EXEC reference.printLine '-- Insert default -1 "Unknown" row'
+          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
+          INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
+            [{{skColumnName}}], [{{mkColumnName}}],
+            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
+            {% endif -%}{%- endfor %}
+            dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash )
+          SELECT 
+            [{{skColumnName}}] = -1,
+            [{{mkColumnName}}] = -1,
+            {%- for key in columns %} 
+            [{{key.name}}] = {%- if (key.dataType in numbers ) %} -1, 
+              {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
+              {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
+              {%- elif (key.dataType in largeObjects) %} null, 
+              {%- else %} null, {%- endif %}
+            {%- endfor %}
+            dwSessionNo = @sessionNo,
+            dwPackageName = @packageName,
+            dwStartDate = @dwInitialDate,
+            dwVersion = 1,
+            dwUpdateDate = @now,
+            dwHash = NULL
+          SET IDENTITY_INSERT  [{{schemaName}}].[{{tableName}}] OFF
         END
 
         EXEC reference.printLine 'Create #busnessKeys'
@@ -144,7 +171,7 @@ BEGIN TRY
             systemKey, bkColumnName, bkValue,
             [dataType] = CASE bkColumnName
               {% for key in srcColumnsPK %}WHEN '{{key.name}}' THEN 
-              {%- if key.dataType in integers %} 'int'
+              {%- if key.dataType in numbers %} 'int'
               {%- elif key.dataType in strings %} 'string'
               {%- elif key.dataType in dates %} 'date'
               {%- elif key.dataType in times %} 'time'
