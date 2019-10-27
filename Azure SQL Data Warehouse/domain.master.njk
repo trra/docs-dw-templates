@@ -13,7 +13,8 @@
 {%- set objectName = p.meta.object.name -%}
 {%- set spSchema = p.meta.object.spSchema -%}
 {%- set spName = p.meta.object.spName -%}
-{%- set numbers = ['bit', 'int', 'integer', 'numeric', 'decimal', 'float', 'bigint', 'smallint', 'tinyint'] -%}
+{%- set integers = ['bit', 'int', 'integer', 'bigint', 'smallint', 'tinyint', 'float'] -%}
+{%- set numbers = ['numeric', 'decimal'] -%}
 {%- set strings = ['varchar', 'nvarchar', 'char', 'nchar'] -%}
 {%- set dates = ['date'] -%}
 {%- set times = ['time'] -%}
@@ -90,7 +91,7 @@ BEGIN TRY
             [{{key.name}}] [{{key.dataType}}] 
             {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
             {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
-            {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+            {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
             {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
             {{- "," -}}
             {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
@@ -114,7 +115,7 @@ BEGIN TRY
             [{{key.name}}] [{{key.dataType}}] 
             {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
             {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
-            {%- elif key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+            {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
             {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
             {{- "," -}}
             {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
@@ -137,7 +138,7 @@ BEGIN TRY
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
           INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
             [{{skColumnName}}], [{{mkColumnName}}],
-            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 %}
+            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 and not loop.lasts %}
             {% endif -%}{%- endfor %}
             dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash )
           SELECT 
@@ -156,7 +157,7 @@ BEGIN TRY
             dwVersion = 1,
             dwUpdateDate = @now,
             dwHash = NULL
-          SET IDENTITY_INSERT  [{{schemaName}}].[{{tableName}}] OFF
+          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
         END
 
         EXEC reference.printLine 'Create #busnessKeys'
@@ -294,11 +295,11 @@ BEGIN TRY
             AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
 
           INSERT INTO [{{schemaName}}].[{{tableName}}] (
-            [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+            [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 and not loop.lasts %}
             {% endif -%}{% endfor -%}
             dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
           )
-          SELECT [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+          SELECT [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 and not loop.lasts %}
             {% endif -%}{% endfor -%}
             dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
           FROM #current
@@ -328,7 +329,7 @@ BEGIN TRY
           EXEC reference.printLine 'Full Load: Insert into [{{schemaName}}].[{{tableName}}History] deleted rows'
           -- load new records
           INSERT INTO #upsert (
-            [{{skColumnName}}], [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+            [{{skColumnName}}], [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 and not loop.lasts %}
             {% endif -%}{% endfor %}
             dwRowChangeType, dwHash, dwLastVersion 
             )
@@ -356,7 +357,7 @@ BEGIN TRY
         EXEC reference.printLine 'Insert into [{{schemaName}}].[{{tableName}}History]'
         -- load new records
         INSERT INTO [{{schemaName}}].[{{tableName}}History] ( 
-          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 and not loop.lasts %}
           {% endif -%}{% endfor %} 
           dwSessionNo, dwPackageName, dwIsLastVersion, dwIsDeleted, 
           dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
@@ -380,7 +381,7 @@ BEGIN TRY
         EXEC reference.printLine 'Insert [{{schemaName}}].[{{tableName}}]'
         -- load new records
         INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 %}
+          [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 and not loop.lasts %}
           {% endif -%}{% endfor %} 
           dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
           )
