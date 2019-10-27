@@ -13,7 +13,7 @@
 {%- set objectName = p.meta.object.name -%}
 {%- set spSchema = p.meta.object.spSchema -%}
 {%- set spName = p.meta.object.spName -%}
-{%- set integers = ['bit', 'int', 'integer', 'bigint', 'smallint', 'tinyint', 'float'] -%}
+{%- set integers = ['int', 'integer', 'bigint', 'smallint', 'tinyint'] -%}
 {%- set numbers = ['numeric', 'decimal'] -%}
 {%- set strings = ['varchar', 'nvarchar', 'char', 'nchar'] -%}
 {%- set dates = ['date'] -%}
@@ -145,7 +145,9 @@ BEGIN TRY
             [{{skColumnName}}] = -1,
             [{{mkColumnName}}] = -1,
             {%- for key in columns %} 
-            [{{key.name}}] = {%- if (key.dataType in numbers ) %} -1, 
+            [{{key.name}}] = 
+            {%- if (key.dataType in integers ) %} -1, 
+              {%- elif (key.dataType in numbers %} -1, 
               {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
               {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
               {%- elif (key.dataType in largeObjects) %} null, 
@@ -172,11 +174,12 @@ BEGIN TRY
             systemKey, bkColumnName, bkValue,
             [dataType] = CASE bkColumnName
               {% for key in srcColumnsPK %}WHEN '{{key.name}}' THEN 
-              {%- if key.dataType in numbers %} 'int'
-              {%- elif key.dataType in strings %} 'string'
-              {%- elif key.dataType in dates %} 'date'
-              {%- elif key.dataType in times %} 'time'
-              {%- elif key.dataType in datetimes %} 'datetime'
+              {%- if key.dataType in integers %} 'int'
+                {%- elif key.dataType in numbers %} 'string'
+                {%- elif key.dataType in strings %} 'string'
+                {%- elif key.dataType in dates %} 'date'
+                {%- elif key.dataType in times %} 'time'
+                {%- elif key.dataType in datetimes %} 'datetime'
               {%- endif %}{% endfor %}
               ELSE 'string' END,
             bkHash
