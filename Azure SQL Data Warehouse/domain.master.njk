@@ -147,7 +147,7 @@ BEGIN TRY
             {%- for key in columns %} 
             [{{key.name}}] = 
             {%- if (key.dataType in integers ) %} -1, 
-              {%- elif (key.dataType in numbers %} -1, 
+              {%- elif (key.dataType in numbers) %} -1, 
               {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
               {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
               {%- elif (key.dataType in largeObjects) %} null, 
