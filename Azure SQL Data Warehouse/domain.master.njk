@@ -162,6 +162,13 @@ BEGIN TRY
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
         END
 
+        {% if query %}
+        EXEC reference.printLine '-- Create #src'
+        IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
+        CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
+        {{query | safe | indent(8) }}
+        {% endif %}
+
         EXEC reference.printLine '-- Create #busnessKeys'
         -- Create #busnessKeys temp table to generate master keys in MK Factory
         DECLARE @domainKey int = (SELECT domainKey FROM mk.[domain] WHERE [domainCode] = @domainCode and [version] = @version)
@@ -204,10 +211,7 @@ BEGIN TRY
                 {% endif -%}
                 {%- endfor -%}
                 ))), 2)
-            FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}] src
-              {% else %}(
-                {{query | safe | indent(14, true) }}
-              ) src{%- endif %}
+            FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
             JOIN mk.system s ON s.[systemCode] = src.[systemCode]
             WHERE {% for key in srcColumnsPK -%}([{{key.name}}] IS NOT NULL){{-' AND ' if not loop.last -}}{% endfor -%}
             ) P
@@ -243,10 +247,7 @@ BEGIN TRY
           dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(MAX), 
             concat_ws(@separator, {% for key in srcColumns -%}src.[{{key.name}}]{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 %}
             {% endif -%}{% endfor -%}))), 2)
-        FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}] src
-          {% else %}(
-          {{query | safe | indent(10, true) }}
-        ) src{%- endif %}
+        FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
         JOIN (SELECT DISTINCT bkHash, mkValue
           FROM mk.businessKey bKey
           JOIN mk.masterKey mKey ON bKey.mkId = mKey.mkId
