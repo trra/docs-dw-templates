@@ -428,15 +428,17 @@ BEGIN TRY
         EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
         ;WITH 
             Expect as (SELECT expectCount = count(*) FROM #stage),
-            Actual as (SELECT 
+            Actual as (
+              SELECT 
                 actualCount = SUM(CASE WHEN [{{skColumnName}}] = -1 THEN 0 ELSE 1 END),
                 actualCountKey = SUM(CASE WHEN [{{skColumnName}}] = -1 THEN 1 ELSE 0 END),
                 actualCountPK = COUNT(DISTINCT CASE
                     WHEN [{{skColumnName}}] = -1 THEN NULL
                     ELSE concat_ws(@separator, sink.[{{mkColumnName}}], '' ) END),
                 actualNullPK = SUM(CASE WHEN sink.[{{mkColumnName}}] IS NULL THEN 1 ELSE 0 END )
-                FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src ON sink.[{{mkColumnName}}] = src.[{{mkColumnName}}])
-                WHERE (src.[{{mkColumnName}}] IS NOT NULL) OR (sink.[{{mkColumnName}}] = -1)
+              FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src ON sink.[{{mkColumnName}}] = src.[{{mkColumnName}}]
+              WHERE (src.[{{mkColumnName}}] IS NOT NULL) OR (sink.[{{mkColumnName}}] = -1)
+              )
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
             @checkQuantityKey = test.assertEqualsInt('checkQuantityKey (destination dimKey = 1)', 1, actualCountKey),
