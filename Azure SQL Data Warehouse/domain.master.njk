@@ -28,7 +28,7 @@ GO
 CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
     @sessionNo varchar(50),
     @packageName varchar(100),
-    @dwHistoryDate date
+    @dwHistoryDate datetime
 AS
 {{ macro.comments (p,  
   "Fetch {% if query %} SQL query {%- else -%} [{{source.table.schemaName}}].[{{source.table.tableName}}]{%- endif %} into domain master table [{{ destination.schemaName }}].[{{ destination.tableName }}]
@@ -54,7 +54,7 @@ DECLARE @now datetime = getUtcDate()
 DECLARE @nowNZ datetime = reference.getLocalDate(@now, 'NZ')
 SET @dwHistoryDate = isNull(@dwHistoryDate, @now)
 DECLARE @sinkObjectCode varchar(250) = CASE 
-  WHEN @dwHistoryDate = CAST(@now as DATE) THEN @objectCode 
+  WHEN @dwHistoryDate = CAST(@now as datetime) THEN @objectCode 
   ELSE concat(@objectCode, 'History') END
 
 DECLARE @rowsRead INT, @rowsWritten INT
@@ -232,8 +232,9 @@ BEGIN TRY
           bkHash = convert(varchar(40), Types.bkHash)
         FROM Types
 
-        EXEC mk.spAllocate @sessionNo, @packageName, @domainCode, @version, @dependencyList, 'delta', @systemCode, @mkColumnName
-
+        DECLARE @mkLoadType varchar(20) = CASE WHEN @loadType = 'initial' THEN 'initial' ELSE 'delta' END
+        EXEC mk.spAllocate @sessionNo, @packageName, @domainCode, @version, @dependencyList, @mkLoadType, @systemCode, @mkColumnName
+        
         EXEC reference.printLine '-- Create #stage'
         -- Create temp source table with foreign key(s)
         IF OBJECT_ID('tempdb..#stage') IS NOT NULL DROP TABLE #stage
@@ -431,10 +432,10 @@ BEGIN TRY
             Expect as (SELECT expectCount = count(*) FROM #stage),
             Actual as (
               SELECT 
-                actualCount = SUM(CASE WHEN [{{skColumnName}}] = -1 THEN 0 ELSE 1 END),
-                actualCountKey = SUM(CASE WHEN [{{skColumnName}}] = -1 THEN 1 ELSE 0 END),
+                actualCount = SUM(CASE WHEN [{{mkColumnName}}] = -1 THEN 0 ELSE 1 END),
+                actualCountKey = SUM(CASE WHEN [{{mkColumnName}}] = -1 THEN 1 ELSE 0 END),
                 actualCountPK = COUNT(DISTINCT CASE
-                    WHEN [{{skColumnName}}] = -1 THEN NULL
+                    WHEN [{{mkColumnName}}] = -1 THEN NULL
                     ELSE concat_ws(@separator, sink.[{{mkColumnName}}], '' ) END),
                 actualNullPK = SUM(CASE WHEN sink.[{{mkColumnName}}] IS NULL THEN 1 ELSE 0 END )
               FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src ON sink.[{{mkColumnName}}] = src.[{{mkColumnName}}]
