@@ -1,4 +1,3 @@
-{%- import 'Azure SQL Data Warehouse/macro.njk' as macro -%}
 {%- set schemaName = p.meta.destination.schemaName -%}
 {%- set tableName = p.meta.destination.tableName -%}
 {%- set columns = p.meta.destination.columns -%}
@@ -30,11 +29,20 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
     @packageName varchar(100),
     @dwHistoryDate datetime
 AS
-{{ macro.comments (p,  
-  "Fetch {% if query %} SQL query {%- else -%} [{{source.table.schemaName}}].[{{source.table.tableName}}]{%- endif %} into domain master table [{{ destination.schemaName }}].[{{ destination.tableName }}]
+-- ********** Project: {{ p.settings.projectName }} **********
+-- Git FileName: {{ p.template.outputFileName }}
+-- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain master table [{{schemaName}}].[{{tableName}}]
 --
 -- Execution sample:
--- EXEC [{{object.spSchema}}].[{{object.spName}}] 'adminSession', 'ETL', NULL" | render(p.meta) | safe )  }}
+-- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 
+-- 
+-- Author: {{ p.settings.author }}
+-- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+-- Modified: {{ p.settings.authorInitials }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+-- 
+-- HISTORY:
+-- PR     	Date      	By	Comments
+-- ----   	----------	---	---------------------------------------------------------
 --
 SET NOCOUNT ON;
 DECLARE @domainCode varchar(10) = '{{spSchema}}' -- define domain name in LOWER CASE
