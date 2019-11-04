@@ -418,10 +418,10 @@ BEGIN TRY
         DECLARE @checkCardinality varchar(250)
 
         ;WITH 
-        S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor -%} '' ), 
+        S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}[{{pk.name}}], {% endfor -%} '' ), 
           dwStartDate, dwEndDate, dwIsCurrent = 0
           FROM [{{schemaName}}].[{{tableName}}History] UNION
-          SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor -%} '' ), 
+          SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}[{{pk.name}}], {% endfor -%} '' ), 
           dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1
           FROM [{{schemaName}}].[{{tableName}}]),
         DatePeriod as (
