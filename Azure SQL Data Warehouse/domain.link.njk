@@ -270,9 +270,8 @@ BEGIN TRY
             )
           SELECT
             [{{skColumnName}}] = sink.[{{skColumnName}}],
-            {% for key in columns -%}
-            [{{key.name}}] = sink.[{{key.name}}],
-            {%- endfor %}
+            {% for key in columns %}[{{key.name}}] = sink.[{{key.name}}],
+            {% endfor %}
             dwRowChangeType = 'Delete',
             dwHash = sink.dwHash,
             dwLastVersion = sink.dwVersion
@@ -376,10 +375,11 @@ BEGIN TRY
                 actualCountPK = COUNT(DISTINCT CASE
                     WHEN sink.[{{skColumnName}}] = -1 THEN NULL
                     ELSE concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor %}'' ) END),
-                actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ 'OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END )
-              FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src 
+                actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ ' OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END )
+              FROM [{{schemaName}}].[{{tableName}}] sink 
+              LEFT JOIN #stage src 
                 ON {% for pk in columnsPK %}sink.[{{pk.name}}] = src.[{{pk.name}}] 
-                {{ 'AND ' if not loop.last }}{%- endfor %}
+                {{ 'AND ' if not loop.last }}{%- endfor -%}
               WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
               )
         SELECT 
