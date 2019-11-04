@@ -224,8 +224,8 @@ BEGIN TRY
           UPDATE [{{schemaName}}].[{{tableName}}History] 
           SET dwIsLastVersion = 1 
           FROM #current cur
-          WHERE {% for pk in columnsPK %} [{{schemaName}}].[{{tableName}}History].[{{key.name}}] = cur.[{{key.name}}] 
-            {% if not loop.lasts %}AND {% endif %}{% endfor %}
+          WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = cur.[{{pk.name}}] 
+            {{ 'AND ' if not loop.last }}{% endfor %}
             AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
           
           INSERT INTO [{{schemaName}}].[{{tableName}}] (
@@ -256,8 +256,8 @@ BEGIN TRY
           dwLastVersion = sink.dwVersion
         FROM #stage stg 
         LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
-        ON {% for pk in columnsPK %} sink.[{{key.name}}] = stg.[{{key.name}}] 
-          {% if not loop.lasts %}AND {% endif %}{% endfor %}
+        ON {% for pk in columnsPK %}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
+          {{ 'AND ' if not loop.last }}{% endfor %}
 
         IF (@loadType = 'full') 
         BEGIN
@@ -278,10 +278,9 @@ BEGIN TRY
             dwLastVersion = sink.dwVersion
           FROM [{{schemaName}}].[{{tableName}}] sink 
           LEFT JOIN [{{schemaName}}].[{{tableName}}History] sinkH 
-          ON {% for pk in columnsPK %} sink.[{{key.name}}] = sinkH.[{{key.name}}] 
-            {% if not loop.lasts %}AND {% endif %}{% endfor %}
+          ON {% for pk in columnsPK %}sink.[{{pk.name}}] = sinkH.[{{pk.name}}] 
+            {{ 'AND ' if not loop.last }}{% endfor %}
             AND sinkH.dwIsLastVersion = 1
-
           WHERE NOT EXISTS (SELECT 1 FROM #stage src WHERE src.[{{mkColumnName}}] = sink.[{{mkColumnName}}])
           AND sink.[{{skColumnName}}] != -1 
         END          
@@ -290,8 +289,8 @@ BEGIN TRY
         UPDATE [{{schemaName}}].[{{tableName}}History] 
         SET dwIsLastVersion = 0
         FROM #upsert src 
-        WHERE {% for pk in columnsPK %} [{{schemaName}}].[{{tableName}}History].[{{key.name}}] = src.[{{key.name}}] 
-          {% if not loop.lasts %}AND {% endif %}{% endfor %}
+        WHERE {% for pk in columnsPK %} [{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = src.[{{pk.name}}] 
+          {{ 'AND ' if not loop.last }}{% endfor %}
           AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}History].dwIsLastVersion = 1
 
         EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}History]'
@@ -315,8 +314,8 @@ BEGIN TRY
           dwUpdateDate = @now,
           dwHash = cur.dwHash
         FROM [{{schemaName}}].[{{tableName}}] cur JOIN #upsert src 
-        ON {% for pk in columnsPK %} cur.[{{key.name}}] = src.[{{key.name}}] 
-          {% if not loop.lasts %}AND {% endif %}{% endfor %}
+        ON {% for pk in columnsPK %} cur.[{{pk.name}}] = src.[{{pk.name}}] 
+          {{ 'AND ' if not loop.last }}{% endfor %}
         WHERE dwRowChangeType in ('Update', 'Delete')
 
         EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
@@ -344,16 +343,13 @@ BEGIN TRY
         FROM #upsert src
         WHERE dwRowChangeType in ('New', 'Update')
 
-        EXEC reference.printLine '-- Delete updated and deleted rows from [{{schemaName}}].[{{tableName}}]'
-        DELETE FROM [{{schemaName}}].[{{tableName}}] 
-        WHERE [{{mkColumnName}}] in (SELECT [{{mkColumnName}}] FROM #upsert WHERE dwRowChangeType in ('Update', 'Delete'))
-
+        EXEC reference.printLine '-- Delete updated and deleted rows from [{{schemaName}}].[{{tableName}}]
         DELETE FROM [{{schemaName}}].[{{tableName}}] 
         WHERE EXISTS (
           SELECT 1 
           FROM #upsert src WHERE src.dwRowChangeType in ('Update', 'Delete')
-            AND {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}].[{{key.name}}] = src.[{{key.name}}] 
-            {% if not loop.lasts %}AND {% endif %}{% endfor %}
+            AND {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+            {{ 'AND ' if not loop.last }}{% endfor %}
           )
         AND dwUpdateDate != @now
 
@@ -374,12 +370,12 @@ BEGIN TRY
                 actualCountKey = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 1 ELSE 0 END),
                 actualCountPK = COUNT(DISTINCT CASE
                     WHEN sink.[{{skColumnName}}] = -1 THEN NULL
-                    ELSE concat_ws(@separator, {% for pk in columnsPK %}sink.[{{key.name}}], {% endfor %} '' ) END),
-                actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{key.name}}] IS NULL) {% if not loop.lasts %} OR {% endif %}{% endfor %} THEN 1 ELSE 0 END )
+                    ELSE concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor %} '' ) END),
+                actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL) {{ 'OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END )
               FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src 
-              ON {% for pk in columnsPK %}sink.[{{key.name}}] = src.[{{key.name}}] 
-                {% if not loop.lasts %} AND {% endif %}{% endfor %}
-              WHERE {% for pk in columnsPK %}(src.[{{key.name}}] IS NOT NULL) OR {% endfor %}
+              ON {% for pk in columnsPK %}sink.[{{pk.name}}] = src.[{{pk.name}}] 
+                {{ 'AND ' if not loop.last }}{% endfor %}
+              WHERE {% for pk in columnsPK %}(src.[{{pk.name}}] IS NOT NULL) OR {% endfor %}
                 (sink.[{{skColumnName}}] = -1)
               )
         SELECT 
@@ -421,7 +417,7 @@ BEGIN TRY
         S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{key.name}}], {% endfor %} '' ), 
           dwStartDate, dwEndDate, dwIsCurrent = 0
           FROM [{{schemaName}}].[{{tableName}}History] UNION
-          SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{key.name}}], {% endfor %} '' ), 
+          SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor %} '' ), 
           dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1
           FROM [{{schemaName}}].[{{tableName}}]),
         DatePeriod as (
