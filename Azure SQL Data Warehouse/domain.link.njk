@@ -225,7 +225,7 @@ BEGIN TRY
           SET dwIsLastVersion = 1 
           FROM #current cur
           WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = cur.[{{pk.name}}] 
-            {{ 'AND ' if not loop.last }}{% endfor %}
+            {{ 'AND ' if not loop.last }}{%- endfor -%}
             AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
           
           INSERT INTO [{{schemaName}}].[{{tableName}}] (
@@ -257,7 +257,7 @@ BEGIN TRY
         FROM #stage stg 
         LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
           ON {% for pk in columnsPK %}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
-          {{ 'AND ' if not loop.last }}{% endfor %}
+          {{ 'AND ' if not loop.last }}{%- endfor -%}
 
         IF (@loadType = 'full') 
         BEGIN
@@ -281,7 +281,11 @@ BEGIN TRY
             ON {% for pk in columnsPK %}sink.[{{pk.name}}] = sinkH.[{{pk.name}}] 
             {{ 'AND ' if not loop.last -}}{%- endfor -%}
             AND sinkH.dwIsLastVersion = 1
-          WHERE NOT EXISTS (SELECT 1 FROM #stage src WHERE src.[{{mkColumnName}}] = sink.[{{mkColumnName}}])
+          WHERE NOT EXISTS (
+            SELECT 1 FROM #stage src 
+            WHERE {% for pk in columnsPK %}src.[{{pk.name}}] = sink.[{{pk.name}}] 
+              {{ 'AND ' if not loop.last }}{%- endfor -%}
+            )
           AND sink.[{{skColumnName}}] != -1 
         END          
 
@@ -350,7 +354,7 @@ BEGIN TRY
           FROM #upsert src 
           WHERE src.dwRowChangeType in ('Update', 'Delete')
             AND {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
-            {{ 'AND ' if not loop.last -}}{%- endfor %}
+            {{ 'AND ' if not loop.last -}}{%- endfor -%}
           )
         AND dwUpdateDate != @now
 
@@ -372,10 +376,10 @@ BEGIN TRY
                 actualCountPK = COUNT(DISTINCT CASE
                     WHEN sink.[{{skColumnName}}] = -1 THEN NULL
                     ELSE concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor %}'' ) END),
-                actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL) {{ 'OR ' if not loop.last }}{%- endfor %} THEN 1 ELSE 0 END )
+                actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ 'OR ' if not loop.last }}{%- endfor -%} THEN 1 ELSE 0 END )
               FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src 
               ON {% for pk in columnsPK %}sink.[{{pk.name}}] = src.[{{pk.name}}] 
-                {{ 'AND ' if not loop.last }}{% endfor %}
+                {{ 'AND ' if not loop.last }}{%- endfor -%}
               WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
               )
         SELECT 
@@ -414,7 +418,7 @@ BEGIN TRY
         DECLARE @checkCardinality varchar(250)
 
         ;WITH 
-        S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {%- endfor %} '' ), 
+        S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor -%} '' ), 
           dwStartDate, dwEndDate, dwIsCurrent = 0
           FROM [{{schemaName}}].[{{tableName}}History] UNION
           SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor -%} '' ), 
