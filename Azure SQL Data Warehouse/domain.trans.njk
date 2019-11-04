@@ -30,7 +30,7 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
 AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
--- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain link table [{{schemaName}}].[{{tableName}}]
+-- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain transactional table [{{schemaName}}].[{{tableName}}]
 --
 -- Execution sample:
 -- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 

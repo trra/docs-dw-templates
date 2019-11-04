@@ -158,3 +158,23 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
+  - name: "Data Domain: Transactional"
+    <<: *defaults
+    description: "Transactional table"
+    templateFileName: Azure SQL Data Warehouse/domain.trans.njk
+    outputFileName: "/.code/domain/trans/{destSchema}.sp{destTable}.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
