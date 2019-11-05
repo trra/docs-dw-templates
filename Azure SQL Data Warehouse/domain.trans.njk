@@ -353,7 +353,7 @@ BEGIN TRY
               FROM [{{schemaName}}].[{{tableName}}] sink 
               JOIN #stage src 
                 ON {% for pk in columnsPK %}sink.[{{pk.name}}] = src.[{{pk.name}}] 
-                {{ 'AND ' if not loop.last }}{%- endfor -%}
+                {{ 'AND ' if not loop.last }}{%- endfor %}
               )
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
