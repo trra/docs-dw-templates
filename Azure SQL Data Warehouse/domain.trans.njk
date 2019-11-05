@@ -136,35 +136,6 @@ BEGIN TRY
           ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
         END
 
-        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{skColumnName}}] = -1) = 0
-        BEGIN 
-          EXEC reference.printLine '-- Insert default -1 "Unknown" row'
-          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
-          INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-            [{{skColumnName}}], 
-            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.lasts %}
-            {% endif -%}{%- endfor %}
-            dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash )
-          SELECT 
-            [{{skColumnName}}] = -1,
-            {%- for key in columns %} 
-            [{{key.name}}] = 
-            {%- if (key.dataType in integers ) %} -1, 
-              {%- elif (key.dataType in numbers) %} -1, 
-              {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
-              {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
-              {%- elif (key.dataType in largeObjects) %} null, 
-              {%- else %} null, {%- endif %}
-            {%- endfor %}
-            dwSessionNo = @sessionNo,
-            dwPackageName = @packageName,
-            dwStartDate = @dwInitialDate,
-            dwVersion = 1,
-            dwUpdateDate = @now,
-            dwHash = ''
-          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
-        END
-
         {% if query %}
         EXEC reference.printLine '-- Create #src'
         IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
@@ -360,7 +331,6 @@ BEGIN TRY
         -- ************ Actual Data UnitTests **************** 
         EXEC reference.printLine '-- Run Actual Data UnitTests'
         DECLARE @checkTotalQuantity varchar(250)
-        DECLARE @checkQuantityKey varchar(250)
         DECLARE @checkQuantityPK varchar(250)
         DECLARE @checkQuantityLimit varchar(250)
         DECLARE @checkNullPK varchar(250)
@@ -370,29 +340,23 @@ BEGIN TRY
             Expect as (SELECT expectCount = count(*) FROM #stage),
             Actual as (
               SELECT 
-                actualCount = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),
-                actualCountKey = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 1 ELSE 0 END),
-                actualCountPK = COUNT(DISTINCT CASE
-                    WHEN sink.[{{skColumnName}}] = -1 THEN NULL
-                    ELSE concat_ws(@separator, {% for pk in columnsPK -%}
-                      {%- if pk.dataType in dates %}convert(nvarchar(100), sink.[{{pk.name}}], 23)
-                      {%- elif pk.dataType in times %}convert(nvarchar(100), sink.[{{pk.name}}], 114)
-                      {%- elif pk.dataType in datetimes %}convert(nvarchar(100), sink.[{{pk.name}}], 121)
-                      {%- else %}sink.[{{pk.name}}]
-                      {%- endif -%}{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 and not loop.last %}
-                      {% endif -%}
-                    {%- endfor %}) 
-                    END),
+                actualCount = COUNT(1),
+                actualCountPK = COUNT(DISTINCT concat_ws(@separator, {% for pk in columnsPK -%}
+                    {%- if pk.dataType in dates %}convert(nvarchar(100), sink.[{{pk.name}}], 23)
+                    {%- elif pk.dataType in times %}convert(nvarchar(100), sink.[{{pk.name}}], 114)
+                    {%- elif pk.dataType in datetimes %}convert(nvarchar(100), sink.[{{pk.name}}], 121)
+                    {%- else %}sink.[{{pk.name}}]
+                    {%- endif -%}{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 and not loop.last %}
+                    {% endif -%}
+                  {%- endfor %})),
                 actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ ' OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END)
               FROM [{{schemaName}}].[{{tableName}}] sink 
-              LEFT JOIN #stage src 
+              JOIN #stage src 
                 ON {% for pk in columnsPK %}sink.[{{pk.name}}] = src.[{{pk.name}}] 
                 {{ 'AND ' if not loop.last }}{%- endfor -%}
-              WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
               )
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
-            @checkQuantityKey = test.assertEqualsInt('checkQuantityKey (destination dimKey = 1)', 1, actualCountKey),
             @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
             @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
                 CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
@@ -402,12 +366,10 @@ BEGIN TRY
 
         -- Info
         PRINT @checkTotalQuantity
-        PRINT @checkQuantityKey
         PRINT @checkQuantityPK
         PRINT @checkQuantityLimit
         
         EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityKey
         EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
         EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
 
@@ -452,18 +414,18 @@ BEGIN TRY
           ),
         TESTS AS (
           SELECT curS.id, 
-              chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
-              cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
-              chk_start_date = CASE WHEN ISNULL( DATEADD(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END
+            chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
+            cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
+            chk_start_date = CASE WHEN ISNULL( DATEADD(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END
           FROM S curS 
           LEFT JOIN S prevS 
-              ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
+            ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
           LEFT JOIN (SELECT id, 
-              SUM(dwIsCurrent) cnt_currentFlag,
-              SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
-              FROM S GROUP BY id) chkCurFlag 
-              ON curS.id = chkCurFlag.id 
-          ),
+            SUM(dwIsCurrent) cnt_currentFlag,
+            SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
+            FROM S GROUP BY id
+          ) chkCurFlag ON curS.id = chkCurFlag.id 
+        ),
         Cardinality as (
           SELECT chk_cardinality = coalesce(SUM(countRows),0) FROM (
             SELECT d.DateAlternateKey, s.id, COUNT(*) as countRows
