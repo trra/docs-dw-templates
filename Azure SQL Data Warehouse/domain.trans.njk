@@ -380,7 +380,7 @@ BEGIN TRY
                       {%- elif pk.dataType in times %} convert(nvarchar(100), sink.[{{pk.name}}], 114)
                       {%- elif pk.dataType in datetimes %} convert(nvarchar(100), sink.[{{pk.name}}], 121)
                       {%- else %} sink.[{{pk.name}}]
-                      {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.lasts %}
+                      {%- endif -%}{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 and not loop.last %}
                       {% endif -%}
                     {%- endfor %}) END),
                 actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ ' OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END)
@@ -432,7 +432,7 @@ BEGIN TRY
                       {%- elif pk.dataType in times %} convert(nvarchar(100), [{{pk.name}}], 114)
                       {%- elif pk.dataType in datetimes %} convert(nvarchar(100), [{{pk.name}}], 121)
                       {%- else %} [{{pk.name}}]
-                      {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.lasts %}
+                      {%- endif -%}{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 and not loop.last %}
                       {% endif -%}
                     {%- endfor %}), 
           dwStartDate, dwEndDate, dwIsCurrent = 0
@@ -443,7 +443,7 @@ BEGIN TRY
                       {%- elif pk.dataType in times %} convert(nvarchar(100), [{{pk.name}}], 114)
                       {%- elif pk.dataType in datetimes %} convert(nvarchar(100), [{{pk.name}}], 121)
                       {%- else %} [{{pk.name}}]
-                      {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.lasts %}
+                      {%- endif -%}{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 and not loop.last %}
                       {% endif -%}
                     {%- endfor %}), 
           dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1
