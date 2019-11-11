@@ -138,11 +138,31 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
+  - name: "Data Domain: Reference Data"
+    <<: *defaults
+    description: "Reference table with history"
+    templateFileName: Azure SQL Data Warehouse/domain.reference.njk
+    outputFileName: "/.code/domain/refData/{destSchema}.sp{destTable}.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
   - name: "Data Domain: Link"
     <<: *defaults
     description: "Link table with history"
     templateFileName: Azure SQL Data Warehouse/domain.link.njk
-    outputFileName: "/.code/domain/link/{destSchema}.sp{destTable}.sql"
+    outputFileName: "/.code/domain/linkData/{destSchema}.sp{destTable}.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -162,7 +182,7 @@ templates:
     <<: *defaults
     description: "Transactional table"
     templateFileName: Azure SQL Data Warehouse/domain.trans.njk
-    outputFileName: "/.code/domain/trans/{destSchema}.sp{destTable}.sql"
+    outputFileName: "/.code/domain/transData/{destSchema}.sp{destTable}.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
