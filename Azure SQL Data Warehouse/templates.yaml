@@ -123,6 +123,7 @@ templates:
     description: "Master Data table with history"
     templateFileName: Azure SQL Data Warehouse/domain.master.njk
     outputFileName: "/.code/domain/masterData/{destSchema}.sp{destTable}.sql"
+    metaFileName: "/.code/domain/masterData.meta/{destSchema}.sp{destTable}.meta.json"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -143,6 +144,7 @@ templates:
     description: "Reference table with history"
     templateFileName: Azure SQL Data Warehouse/domain.reference.njk
     outputFileName: "/.code/domain/refData/{destSchema}.sp{destTable}.sql"
+    metaFileName: "/.code/domain/refData.meta/{destSchema}.sp{destTable}.meta.json"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -163,6 +165,7 @@ templates:
     description: "Link table with history"
     templateFileName: Azure SQL Data Warehouse/domain.link.njk
     outputFileName: "/.code/domain/linkData/{destSchema}.sp{destTable}.sql"
+    metaFileName: "/.code/domain/linkData.meta/{destSchema}.sp{destTable}.meta.json"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -183,6 +186,7 @@ templates:
     description: "Transactional table"
     templateFileName: Azure SQL Data Warehouse/domain.trans.njk
     outputFileName: "/.code/domain/transData/{destSchema}.sp{destTable}.sql"
+    metaFileName: "/.code/domain/transData/{destSchema}.sp{destTable}.meta.json"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
