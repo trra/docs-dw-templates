@@ -120,10 +120,11 @@ templates:
       - Procedure Name
   - name: "Data Domain: Master Data"
     <<: *defaults
-    description: "Master Data table with history"
+    description: Master Data table with history
     templateFileName: Azure SQL Data Warehouse/domain.master.njk
-    outputFileName: "/.code/domain/masterData/{destSchema}.sp{destTable}.sql"
-    metaFolder: "/.code/domain/masterData.meta/"
+    metaFolder: "/.code/domain/master/.meta/"
+    outputFolder: "/.code/domain/master/"
+    outputFileName: "{destSchema}.sp{destTable}.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -141,10 +142,11 @@ templates:
       - Procedure Name
   - name: "Data Domain: Reference Data"
     <<: *defaults
-    description: "Reference table with history"
+    description: Reference table with history
     templateFileName: Azure SQL Data Warehouse/domain.reference.njk
-    outputFileName: "/.code/domain/refData/{destSchema}.sp{destTable}.sql"
-    metaFolder: "/.code/domain/refData.meta/"
+    metaFolder: "/.code/domain/ref/.meta/"
+    outputFolder: "/.code/domain/ref/"
+    outputFileName: "{destSchema}.sp{destTable}.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -162,10 +164,11 @@ templates:
       - Procedure Name
   - name: "Data Domain: Link"
     <<: *defaults
-    description: "Link table with history"
+    description: Link table with history
     templateFileName: Azure SQL Data Warehouse/domain.link.njk
-    outputFileName: "/.code/domain/linkData/{destSchema}.sp{destTable}.sql"
-    metaFolder: "/.code/domain/linkData.meta/"
+    metaFolder: "/.code/domain/link/.meta/"
+    outputFolder: "/.code/domain/link/"
+    outputFileName: "{destSchema}.sp{destTable}.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
@@ -183,10 +186,11 @@ templates:
       - Procedure Name
   - name: "Data Domain: Transactional"
     <<: *defaults
-    description: "Transactional table"
+    description: Transactional table
     templateFileName: Azure SQL Data Warehouse/domain.trans.njk
-    outputFileName: "/.code/domain/transData/{destSchema}.sp{destTable}.sql"
     metaFolder: "/.code/domain/transData.meta/"
+    outputFolder: "/.code/domain/transData/"
+    outputFileName: "{destSchema}.sp{destTable}.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
