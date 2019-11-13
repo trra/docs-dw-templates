@@ -305,7 +305,7 @@ BEGIN TRY
           FROM [{{schemaName}}].[{{tableName}}] sink
           WHERE sink.dwStartDate <= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
 
-          IF (@sessionNo != 'testSession') THEN BEGIN
+          IF (@sessionNo != 'testSession') BEGIN
             DELETE FROM [{{schemaName}}].[{{tableName}}]
             SET @message = concat('Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}History]')
             EXEC reference.printLine @message
@@ -371,7 +371,7 @@ BEGIN TRY
           AND sink.[{{skColumnName}}] != -1 
         END          
 
-        IF (@sessionNo != 'testSession') THEN BEGIN
+        IF (@sessionNo != 'testSession') BEGIN
           EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}History] dwLastVersion'
           UPDATE [{{schemaName}}].[{{tableName}}History] 
           SET dwIsLastVersion = 0

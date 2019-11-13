@@ -188,26 +188,28 @@ BEGIN TRY
           FROM [{{schemaName}}].[{{tableName}}] sink
           WHERE sink.dwStartDate <= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
 
-          DELETE FROM [{{schemaName}}].[{{tableName}}]
-          SET @message = concat('Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}History]')
-          EXEC reference.printLine @message
-          DELETE FROM [{{schemaName}}].[{{tableName}}History] WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
-          UPDATE [{{schemaName}}].[{{tableName}}History] 
-          SET dwIsLastVersion = 1 
-          FROM #current cur
-          WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = cur.[{{pk.name}}] 
-            {{ 'AND ' if not loop.last }}{%- endfor -%}
-            AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
-          
-          INSERT INTO [{{schemaName}}].[{{tableName}}] (
-            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
-            {% endif -%}{% endfor -%}
-            dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
-          )
-          SELECT {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
-            {% endif -%}{% endfor -%}
-            dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
-          FROM #current
+          IF (@sessionNo != 'testSession') BEGIN
+            DELETE FROM [{{schemaName}}].[{{tableName}}]
+            SET @message = concat('Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}History]')
+            EXEC reference.printLine @message
+            DELETE FROM [{{schemaName}}].[{{tableName}}History] WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
+            UPDATE [{{schemaName}}].[{{tableName}}History] 
+            SET dwIsLastVersion = 1 
+            FROM #current cur
+            WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = cur.[{{pk.name}}] 
+              {{ 'AND ' if not loop.last }}{%- endfor -%}
+              AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
+            
+            INSERT INTO [{{schemaName}}].[{{tableName}}] (
+              {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
+              {% endif -%}{% endfor -%}
+              dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
+            )
+            SELECT {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
+              {% endif -%}{% endfor -%}
+              dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
+            FROM #current
+          END
         END
 
         EXEC reference.printLine '-- Create #upsert'
@@ -259,74 +261,76 @@ BEGIN TRY
           AND sink.[{{skColumnName}}] != -1 
         END          
 
-        EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}History] dwLastVersion'
-        UPDATE [{{schemaName}}].[{{tableName}}History] 
-        SET dwIsLastVersion = 0
-        FROM #upsert src 
-        WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = src.[{{pk.name}}] 
-          {{ 'AND ' if not loop.last -}}{%- endfor -%}
-          AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}History].dwIsLastVersion = 1
-
-        EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}History]'
-        -- load new records
-        INSERT INTO [{{schemaName}}].[{{tableName}}History] ( 
-          {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
-          {% endif -%}{% endfor %} 
-          dwSessionNo, dwPackageName, dwIsLastVersion, dwIsDeleted, 
-          dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
-        SELECT
-          {% for key in columns -%}
-          [{{key.name}}] = cur.[{{key.name}}],
-          {% endfor -%}
-          dwSessionNo = cur.dwSessionNo,
-          dwPackageName = cur.dwPackageName,
-          dwIsLastVersion = 1,
-          dwIsDeleted = CASE WHEN dwRowChangeType = 'Delete' THEN 1 ELSE 0 END,
-          dwStartDate = cur.dwStartDate,
-          dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime)),
-          dwVersion = isNull(src.dwLastVersion, 1),
-          dwUpdateDate = @now,
-          dwHash = cur.dwHash
-        FROM [{{schemaName}}].[{{tableName}}] cur JOIN #upsert src 
-          ON {% for pk in columnsPK %}cur.[{{pk.name}}] = src.[{{pk.name}}] 
-          {{ 'AND ' if not loop.last -}}{%- endfor %}
-        WHERE dwRowChangeType in ('Update', 'Delete')
-
-        EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
-        -- load new records
-        INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-          {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
-          {% endif -%}{% endfor %} 
-          dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
-          )
-        SELECT
-          {% for key in columns -%}
-          [{{key.name}}] = src.[{{key.name}}],
-          {% endfor -%}
-          dwSessionNo = @sessionNo,
-          dwPackageName = @packageName,
-          -- dwIsDeleted = 0,
-          dwStartDate = CASE 
-            -- #note: dwStartDate can base on src.<startDate>
-            WHEN src.dwLastVersion IS NULL AND @loadType = 'Initial' THEN @dwInitialDate 
-            ELSE @dwHistoryDate END,
-          -- dwEndDate = @dwEndDate,
-          dwVersion = isNull(src.dwLastVersion, 0) + 1,
-          dwUpdateDate = @now,
-          dwHash = src.dwHash
-        FROM #upsert src
-        WHERE dwRowChangeType in ('New', 'Update')
-
-        EXEC reference.printLine '-- Delete updated and deleted rows from [{{schemaName}}].[{{tableName}}]'
-        DELETE FROM [{{schemaName}}].[{{tableName}}] 
-        WHERE EXISTS (
-          SELECT 1 
+        IF (@sessionNo != 'testSession') BEGIN
+          EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}History] dwLastVersion'
+          UPDATE [{{schemaName}}].[{{tableName}}History] 
+          SET dwIsLastVersion = 0
           FROM #upsert src 
-          WHERE src.dwRowChangeType in ('Update', 'Delete')
-            AND {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+          WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = src.[{{pk.name}}] 
             {{ 'AND ' if not loop.last -}}{%- endfor -%}
-          )
-        AND dwUpdateDate != @now
+            AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}History].dwIsLastVersion = 1
+
+          EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}History]'
+          -- load new records
+          INSERT INTO [{{schemaName}}].[{{tableName}}History] ( 
+            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
+            {% endif -%}{% endfor %} 
+            dwSessionNo, dwPackageName, dwIsLastVersion, dwIsDeleted, 
+            dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
+          SELECT
+            {% for key in columns -%}
+            [{{key.name}}] = cur.[{{key.name}}],
+            {% endfor -%}
+            dwSessionNo = cur.dwSessionNo,
+            dwPackageName = cur.dwPackageName,
+            dwIsLastVersion = 1,
+            dwIsDeleted = CASE WHEN dwRowChangeType = 'Delete' THEN 1 ELSE 0 END,
+            dwStartDate = cur.dwStartDate,
+            dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime)),
+            dwVersion = isNull(src.dwLastVersion, 1),
+            dwUpdateDate = @now,
+            dwHash = cur.dwHash
+          FROM [{{schemaName}}].[{{tableName}}] cur JOIN #upsert src 
+            ON {% for pk in columnsPK %}cur.[{{pk.name}}] = src.[{{pk.name}}] 
+            {{ 'AND ' if not loop.last -}}{%- endfor %}
+          WHERE dwRowChangeType in ('Update', 'Delete')
+
+          EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
+          -- load new records
+          INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
+            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
+            {% endif -%}{% endfor %} 
+            dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
+            )
+          SELECT
+            {% for key in columns -%}
+            [{{key.name}}] = src.[{{key.name}}],
+            {% endfor -%}
+            dwSessionNo = @sessionNo,
+            dwPackageName = @packageName,
+            -- dwIsDeleted = 0,
+            dwStartDate = CASE 
+              -- #note: dwStartDate can base on src.<startDate>
+              WHEN src.dwLastVersion IS NULL AND @loadType = 'Initial' THEN @dwInitialDate 
+              ELSE @dwHistoryDate END,
+            -- dwEndDate = @dwEndDate,
+            dwVersion = isNull(src.dwLastVersion, 0) + 1,
+            dwUpdateDate = @now,
+            dwHash = src.dwHash
+          FROM #upsert src
+          WHERE dwRowChangeType in ('New', 'Update')
+
+          EXEC reference.printLine '-- Delete updated and deleted rows from [{{schemaName}}].[{{tableName}}]'
+          DELETE FROM [{{schemaName}}].[{{tableName}}] 
+          WHERE EXISTS (
+            SELECT 1 
+            FROM #upsert src 
+            WHERE src.dwRowChangeType in ('Update', 'Delete')
+              AND {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+              {{ 'AND ' if not loop.last -}}{%- endfor -%}
+            )
+          AND dwUpdateDate != @now
+        END
 
         -- ************ Actual Data UnitTests **************** 
         EXEC reference.printLine '-- Run Actual Data UnitTests'
