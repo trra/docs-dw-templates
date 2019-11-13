@@ -188,8 +188,8 @@ templates:
     <<: *defaults
     description: Transactional table
     templateFileName: Azure SQL Data Warehouse/domain.trans.njk
-    metaFolder: "/.code/domain/transData.meta/"
-    outputFolder: "/.code/domain/transData/"
+    metaFolder: "/.code/domain/trans.meta/"
+    outputFolder: "/.code/domain/trans/"
     outputFileName: "{destSchema}.sp{destTable}.sql"
     destSchema: ""
     destTable: "{ObjectName}"
