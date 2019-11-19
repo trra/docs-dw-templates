@@ -322,8 +322,8 @@ BEGIN TRY
                       {%- endfor -%}
                     ) END),   
                 actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
-              FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src ON 
-              {%- for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
+              FROM [{{schemaName}}].[{{tableName}}] sink 
+              LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
               WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
               )
         SELECT 
