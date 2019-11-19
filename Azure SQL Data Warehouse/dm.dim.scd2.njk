@@ -316,14 +316,15 @@ BEGIN TRY
                       {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
                       {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
                       {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
-                      {%- else %} src.[{{key.name}}]
+                      {%- else %} sink.[{{key.name}}]
                       {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
                       {% endif -%}
                       {%- endfor -%}
                     ) END),   
-                actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}([{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
-              FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src ON sink.[{{skColumnName}}] = src.[{{skColumnName}}]
-              WHERE (src.[{{skColumnName}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
+                actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+              FROM [{{schemaName}}].[{{tableName}}] sink LEFT JOIN #stage src ON 
+              {%- for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
+              WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
               )
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
@@ -368,9 +369,8 @@ BEGIN TRY
             {%- elif key.dataType in datetimes %} convert(nvarchar(100), [{{key.name}}], 121)
             {%- else %} src.[{{key.name}}]
             {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
-            {% endif -%}
-            {%- endfor -%}
-          ), 
+            {%- endif -%}
+            {%- endfor -%}), 
           dwStartDate, dwEndDate, dwIsCurrent
           FROM [{{schemaName}}].[{{tableName}}]),
         DatePeriod as (
