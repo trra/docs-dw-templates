@@ -212,9 +212,9 @@ templates:
     templateFileName: Azure SQL Data Warehouse/dm.dim.scd2.njk
     metaFolder: "/.code/dm/dimension/.meta/"
     outputFolder: "/.code/dm/dimension/"
-    outputFileName: "{destSchema}.sp{destTable}.sql"
+    outputFileName: "{destSchema}.sp{ObjectName}.sql"
     destSchema: ""
-    destTable: "dim{ObjectName}"
+    destTable: "{ObjectName}"
     spSchema: "{destSchema}"
     spName: "sp{ObjectName}"
     objectNameMask: <exclusionMaskArray>
