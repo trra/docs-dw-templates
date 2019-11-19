@@ -206,3 +206,25 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
+  - name: "Data Mart: Dimension SCD2"
+    <<: *defaults
+    description: Data Mart dimension table with history
+    templateFileName: Azure SQL Data Warehouse/dm.dim.scd2.njk
+    metaFolder: "/.code/dm/dimension/.meta/"
+    outputFolder: "/.code/dm/dimension/"
+    outputFileName: "{destSchema}.sp{destTable}.sql"
+    destSchema: ""
+    destTable: "dim{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
