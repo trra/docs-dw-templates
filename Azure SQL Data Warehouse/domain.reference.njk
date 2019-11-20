@@ -590,6 +590,7 @@ BEGIN CATCH
 END CATCH
 GO
 
+
 IF OBJECT_ID ('[{{schemaName}}].[v{{tableName}}]', 'V') IS NOT NULL DROP VIEW [{{schemaName}}].[v{{tableName}}];
 GO
 
@@ -597,15 +598,16 @@ CREATE VIEW [{{schemaName}}].[v{{tableName}}] AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
 -- Combine [{{schemaName}}].[{{tableName}}] and [{{schemaName}}].[{{tableName}}History] tables 
--- and show a snapshot version of the object dataset at specified point in time.
--- (see: reference.getDomainParams() function '$.dwCurrentDate' parameter value)
+-- and show a snapshot version of the dataset at any specific point in time.
+-- To select a custom date you need to update the '$.dwCurrentDate' parameter in reference.getDomainParams()
 --
--- Execution sample:
--- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 
+-- Usage sample:
+-- SELECT * FROM [{{schemaName}}].[v{{tableName}}] 
 -- 
 -- Author: {{ p.settings.author }}
 -- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
 -- Modified: {{ p.settings.authorInitials }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+--
 SELECT
   [{{mkColumnName}}] = cur.[{{mkColumnName}}],
   {% for key in columns -%}

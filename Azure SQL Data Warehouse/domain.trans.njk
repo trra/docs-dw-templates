@@ -502,3 +502,44 @@ BEGIN CATCH
     EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
     RAISERROR (@message, 16, 1)
 END CATCH
+GO
+
+
+IF OBJECT_ID ('[{{schemaName}}].[v{{tableName}}]', 'V') IS NOT NULL DROP VIEW [{{schemaName}}].[v{{tableName}}];
+GO
+
+CREATE VIEW [{{schemaName}}].[v{{tableName}}] AS 
+-- ********** Project: {{ p.settings.projectName }} **********
+-- Git FileName: {{ p.template.outputFileName }}
+-- Combine [{{schemaName}}].[{{tableName}}] and [{{schemaName}}].[{{tableName}}History] tables 
+-- and show a snapshot version of the dataset at any specific point in time.
+-- To select a custom date you need to update the '$.dwCurrentDate' parameter in reference.getDomainParams()
+--
+-- Usage sample:
+-- SELECT * FROM [{{schemaName}}].[v{{tableName}}] 
+-- 
+-- Author: {{ p.settings.author }}
+-- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+-- Modified: {{ p.settings.authorInitials }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+--
+SELECT
+  [{{mkColumnName}}] = cur.[{{mkColumnName}}],
+  {% for key in columns -%}
+  [{{key.name}}] = cur.[{{key.name}}],
+  {% endfor -%}
+  dwSessionNo, dwPackageName, dwIsDeleted = 0,
+  dwStartDate, dwEndDate = CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime), 
+  dwIsCurrent = 1, dwVersion, dwUpdateDate, dwHash
+FROM [{{schemaName}}].[{{tableName}}] cur
+WHERE CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime)
+UNION
+SELECT
+  [{{mkColumnName}}] = hist.[{{mkColumnName}}],
+  {% for key in columns -%}
+  [{{key.name}}] = hist.[{{key.name}}],
+  {% endfor -%}
+  dwSessionNo, dwPackageName, dwIsDeleted,
+  dwStartDate, dwEndDate, 
+  dwIsCurrent = 0, dwVersion, dwUpdateDate, dwHash
+FROM [{{schemaName}}].[{{tableName}}History] hist
+WHERE CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
