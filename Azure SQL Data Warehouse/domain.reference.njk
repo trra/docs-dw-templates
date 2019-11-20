@@ -590,20 +590,32 @@ BEGIN CATCH
 END CATCH
 GO
 
-IF OBJECT_ID ('{{schemaName}}].[v{{tableName}}]', 'V') IS NOT NULL DROP VIEW {{schemaName}}].[v{{tableName}}];
+IF OBJECT_ID ('[{{schemaName}}].[v{{tableName}}]', 'V') IS NOT NULL DROP VIEW [{{schemaName}}].[v{{tableName}}];
 GO
 
-CREATE VIEW {{schemaName}}].[v{{tableName}}] AS 
+CREATE VIEW [{{schemaName}}].[v{{tableName}}] AS 
+-- ********** Project: {{ p.settings.projectName }} **********
+-- Git FileName: {{ p.template.outputFileName }}
+-- Combine [{{schemaName}}].[{{tableName}}] and [{{schemaName}}].[{{tableName}}History] tables 
+-- and show a snapshot version of the object dataset at specified point in time.
+-- (see: reference.getDomainParams() function '$.dwCurrentDate' parameter value)
+--
+-- Execution sample:
+-- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 
+-- 
+-- Author: {{ p.settings.author }}
+-- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
+-- Modified: {{ p.settings.authorInitials }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
 SELECT
   [{{mkColumnName}}] = cur.[{{mkColumnName}}],
   {% for key in columns -%}
   [{{key.name}}] = cur.[{{key.name}}],
   {% endfor -%}
   dwSessionNo, dwPackageName, dwIsDeleted = 0,
-  dwStartDate, dwEndDate = CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwEndDate') as datetime), 
+  dwStartDate, dwEndDate = CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime), 
   dwIsCurrent = 1, dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}] cur
-WHERE CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwEndDate') as datetime)
+WHERE CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime)
 UNION
 SELECT
   [{{mkColumnName}}] = hist.[{{mkColumnName}}],
@@ -614,4 +626,4 @@ SELECT
   dwStartDate, dwEndDate, 
   dwIsCurrent = 0, dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}History] hist
-WHERE CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
+WHERE CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
