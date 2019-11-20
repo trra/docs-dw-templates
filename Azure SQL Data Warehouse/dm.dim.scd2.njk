@@ -367,11 +367,11 @@ BEGIN TRY
             {%- if key.dataType in dates %} convert(nvarchar(100), [{{key.name}}], 23)
             {%- elif key.dataType in times %} convert(nvarchar(100), [{{key.name}}], 114)
             {%- elif key.dataType in datetimes %} convert(nvarchar(100), [{{key.name}}], 121)
-            {%- else %} src.[{{key.name}}]
+            {%- else %} [{{key.name}}]
             {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
             {%- endif -%}
             {%- endfor -%}), 
-          dwStartDate, dwEndDate, dwIsCurrent
+          dwStartDate, dwEndDate, dwIsCurrent = convert(int, dwIsCurrent)
           FROM [{{schemaName}}].[{{tableName}}]),
         DatePeriod as (
           SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)

@@ -54,15 +54,6 @@ DECLARE @systemCode varchar(10) = 'ALL' -- define what system source/ALL used in
 DECLARE @mkColumnName varchar(50) = '{{mkColumnName}}' -- mkColumnName
 DECLARE @objectCode varchar(250) = '{{schemaName}}.{{tableName}}' -- define destination object code 
 DECLARE @procName varchar(250)   = '{{schemaName}}.sp{{tableName}}' -- current proc name - OBJECT_NAME(@@PROCID) is not yet supported
--- read domain settings
-DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode), '$.dwInitialDate') as datetime)
-DECLARE @dwEndDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode), '$.dwEndDate') as datetime)
-DECLARE @separator nvarchar(2) = JSON_VALUE(reference.getDomainParams(@domainCode), '$.separator')
-DECLARE @version nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode), '$.version')
-DECLARE @loadType nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode), '$.loadType')
-SET @message = reference.getDomainParams(@domainCode)
-PRINT @message
-EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 
 DECLARE @now datetime = getUtcDate()
 DECLARE @nowNZ datetime = reference.getLocalDate(@now, 'NZ')
@@ -70,6 +61,16 @@ SET @dwHistoryDate = isNull(@dwHistoryDate, @now)
 DECLARE @sinkObjectCode varchar(250) = CASE 
   WHEN @dwHistoryDate = CAST(@now as datetime) THEN @objectCode 
   ELSE concat(@objectCode, 'History') END
+
+-- read domain settings
+DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.dwInitialDate') as datetime)
+DECLARE @dwEndDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.dwEndDate') as datetime)
+DECLARE @separator nvarchar(2) = JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.separator')
+DECLARE @version nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.version')
+DECLARE @loadType nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.loadType')
+SET @message = reference.getDomainParams(@domainCode, @now)
+PRINT @message
+EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 
 PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Start Execution'
@@ -587,3 +588,30 @@ BEGIN CATCH
     EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
     RAISERROR (@message, 16, 1)
 END CATCH
+GO
+
+IF OBJECT_ID ('{{schemaName}}].[v{{tableName}}]', 'V') IS NOT NULL DROP VIEW {{schemaName}}].[v{{tableName}}];
+GO
+
+CREATE VIEW {{schemaName}}].[v{{tableName}}] AS 
+SELECT
+  [{{mkColumnName}}] = cur.[{{mkColumnName}}],
+  {% for key in columns -%}
+  [{{key.name}}] = cur.[{{key.name}}],
+  {% endfor -%}
+  dwSessionNo, dwPackageName, dwIsDeleted = 0,
+  dwStartDate, dwEndDate = CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwEndDate') as datetime), 
+  dwIsCurrent = 1, dwVersion, dwUpdateDate, dwHash
+FROM [{{schemaName}}].[{{tableName}}] cur
+WHERE CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwEndDate') as datetime)
+UNION
+SELECT
+  [{{mkColumnName}}] = hist.[{{mkColumnName}}],
+  {% for key in columns -%}
+  [{{key.name}}] = hist.[{{key.name}}],
+  {% endfor -%}
+  dwSessionNo, dwPackageName, dwIsDeleted,
+  dwStartDate, dwEndDate, 
+  dwIsCurrent = 0, dwVersion, dwUpdateDate, dwHash
+FROM [{{schemaName}}].[{{tableName}}History] hist
+WHERE CAST(JSON_VALUE(reference.getDomainParams({{spSchema}}, @now), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
