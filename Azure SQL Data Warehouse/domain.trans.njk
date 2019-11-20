@@ -523,7 +523,6 @@ CREATE VIEW [{{schemaName}}].[v{{tableName}}] AS
 -- Modified: {{ p.settings.authorInitials }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
 --
 SELECT
-  [{{mkColumnName}}] = cur.[{{mkColumnName}}],
   {% for key in columns -%}
   [{{key.name}}] = cur.[{{key.name}}],
   {% endfor -%}
@@ -534,7 +533,6 @@ FROM [{{schemaName}}].[{{tableName}}] cur
 WHERE CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime)
 UNION
 SELECT
-  [{{mkColumnName}}] = hist.[{{mkColumnName}}],
   {% for key in columns -%}
   [{{key.name}}] = hist.[{{key.name}}],
   {% endfor -%}
