@@ -151,8 +151,8 @@ BEGIN TRY
             dwHash = ''
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
         END 
-        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0
-        ELSE BEGIN 
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0 
+        BEGIN 
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON
           UPDATE [{{schemaName}}].[{{tableName}}] SET [{{skColumnName}}] = -1 WHERE [{{columnsPK[0].name}}] = -1 
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
