@@ -118,6 +118,9 @@ BEGIN TRY
           -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
         END
 
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0 
+          DELETE [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 
+
         IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1) = 0
         BEGIN 
           EXEC reference.printLine '-- Insert default -1 "Unknown" row'
@@ -151,12 +154,6 @@ BEGIN TRY
             dwHash = ''
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
         END 
-        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0 
-        BEGIN 
-          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON
-          UPDATE [{{schemaName}}].[{{tableName}}] SET [{{skColumnName}}] = -1 WHERE [{{columnsPK[0].name}}] = -1 
-          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
-        END
 
         {% if query %}
         EXEC reference.printLine '-- Create #src'
