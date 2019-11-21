@@ -118,10 +118,10 @@ BEGIN TRY
           -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
         END
 
-        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{skColumnName}}] = -1) = 0
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1) = 0
         BEGIN 
           EXEC reference.printLine '-- Insert default -1 "Unknown" row'
-          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
+          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON
           INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
             [{{skColumnName}}], 
             {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.last %}
@@ -149,6 +149,12 @@ BEGIN TRY
             dwVersion = 1,
             dwUpdateDate = @now,
             dwHash = ''
+          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
+        END 
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0
+        ELSE BEGIN 
+          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON
+          UPDATE [{{schemaName}}].[{{tableName}}] SET [{{skColumnName}}] = -1 WHERE [{{columnsPK[0].name}}] = -1 
           SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
         END
 
@@ -201,7 +207,9 @@ BEGIN TRY
           IF (@sessionNo != 'testSession') BEGIN
             SET @message = concat('Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
             EXEC reference.printLine @message
-            DELETE FROM [{{schemaName}}].[{{tableName}}] WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
+            DELETE FROM [{{schemaName}}].[{{tableName}}] 
+            WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
+              AND [{{skColumnName}}] != -1
             UPDATE [{{schemaName}}].[{{tableName}}] 
             SET 
               dwIsCurrent = 1, 
