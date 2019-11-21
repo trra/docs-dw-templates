@@ -181,6 +181,7 @@ BEGIN TRY
                 {%- endif -%}
                 {%- endfor -%}, ''))), 2)  
         FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
+        WHERE src.[{{columnsPK[0].name}}] != -1
         
         IF (@sinkObjectCode != @objectCode) BEGIN
           SET @message = concat('Restore initial state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
