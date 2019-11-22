@@ -145,6 +145,9 @@ BEGIN TRY
           ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
         END
 
+        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{mkColumnName}}] = -1 AND [{{skColumnName}}] != -1) > 0
+          DELETE FROM [{{schemaName}}].[{{tableName}}] WHERE [{{mkColumnName}}] = -1 AND [{{skColumnName}}] != -1
+
         IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{mkColumnName}}] = -1) = 0
         BEGIN 
           EXEC reference.printLine '-- Insert default -1 "Unknown" row'
@@ -315,7 +318,7 @@ BEGIN TRY
           WHERE sink.dwStartDate <= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
 
           IF (@sessionNo != 'testSession') BEGIN
-            DELETE FROM [{{schemaName}}].[{{tableName}}]
+            DELETE FROM [{{schemaName}}].[{{tableName}}] WHERE [{{mkColumnName}}] != -1
             SET @message = concat('Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}History]')
             EXEC reference.printLine @message
             DELETE FROM [{{schemaName}}].[{{tableName}}History] WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
@@ -334,6 +337,7 @@ BEGIN TRY
               {% endif -%}{% endfor -%}
               dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
             FROM #current
+            WHERE [{{mkColumnName}}] != -1
           END
         END
 
@@ -615,10 +619,10 @@ SELECT
   [{{key.name}}] = cur.[{{key.name}}],
   {% endfor -%}
   dwSessionNo, dwPackageName, dwIsDeleted = 0,
-  dwStartDate, dwEndDate = CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime), 
+  dwStartDate, dwEndDate = CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime), 
   dwIsCurrent = 1, dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}] cur
-WHERE CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime)
+WHERE CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime)
 UNION
 SELECT
   [{{mkColumnName}}] = hist.[{{mkColumnName}}],
@@ -629,4 +633,6 @@ SELECT
   dwStartDate, dwEndDate, 
   dwIsCurrent = 0, dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}History] hist
-WHERE CAST(JSON_VALUE(reference.getDomainParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
+WHERE ABS(DATEDIFF(second, getUtcDate(),
+    CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime))) > 10
+  AND CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
