@@ -63,12 +63,12 @@ DECLARE @sinkObjectCode varchar(250) = CASE
   ELSE concat(@objectCode, 'History') END
 
 -- read domain settings
-DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.dwInitialDate') as datetime)
-DECLARE @dwEndDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.dwEndDate') as datetime)
-DECLARE @separator nvarchar(2) = JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.separator')
-DECLARE @version nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.version')
-DECLARE @loadType nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode, @now), '$.loadType')
-SET @message = reference.getDomainParams(@domainCode, @now)
+DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode, @now, @sessionNo, @objectCode), '$.dwInitialDate') as datetime)
+DECLARE @dwEndDate datetime = CAST(JSON_VALUE(reference.getDomainParams(@domainCode, @now, @sessionNo, @objectCode), '$.dwEndDate') as datetime)
+DECLARE @separator nvarchar(2) = JSON_VALUE(reference.getDomainParams(@domainCode, @now, @sessionNo, @objectCode), '$.separator')
+DECLARE @version nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode, @now, @sessionNo, @objectCode), '$.version')
+DECLARE @loadType nvarchar(10) = JSON_VALUE(reference.getDomainParams(@domainCode, @now, @sessionNo, @objectCode), '$.loadType')
+SET @message = reference.getDomainParams(@domainCode, @now, @sessionNo, @objectCode)
 PRINT @message
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 
