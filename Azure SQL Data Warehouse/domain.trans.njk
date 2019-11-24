@@ -527,10 +527,11 @@ SELECT
   [{{key.name}}] = cur.[{{key.name}}],
   {% endfor -%}
   dwSessionNo, dwPackageName, dwIsDeleted = 0,
-  dwStartDate, dwEndDate = CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime), 
+  dwStartDate, dwEndDate = CAST(JSON_VALUE(params.value, getUtcDate()), '$.dwEndDate') as datetime), 
   dwIsCurrent = 1, dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}] cur
-WHERE CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwEndDate') as datetime)
+CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
+WHERE CAST(JSON_VALUE(params.value, getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(params.value, getUtcDate()), '$.dwEndDate') as datetime)
 UNION
 SELECT
   {% for key in columns -%}
@@ -540,6 +541,7 @@ SELECT
   dwStartDate, dwEndDate, 
   dwIsCurrent = 0, dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}History] hist
+CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
 WHERE ABS(DATEDIFF(second, getUtcDate(),
-    CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime))) > 10
-  AND CAST(JSON_VALUE(reference.getMartParams('{{spSchema}}', getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
+    CAST(JSON_VALUE(params.value, getUtcDate()), '$.dwCurrentDate') as datetime))) > 10
+  AND CAST(JSON_VALUE(params.value, getUtcDate()), '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate
