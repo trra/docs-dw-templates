@@ -200,13 +200,12 @@ BEGIN TRY
           WHERE [{{skColumnName}}] IN (
             SELECT sink.[{{skColumnName}}]
             FROM #upsert src JOIN [{{schemaName}}].[{{tableName}}] sink
-            WHERE {% for pk in srcColumnsPK -%}src.[{{pk.name}}] = sink.[{{pk.name}}] 
-              {%- if not loop.last %} AND {% endif -%}{% if (loop.index % 3) === 0 or loop.last %}
-              {% endif -%}{%- endfor %}
-              AND src.dwRowChangeType in ('Update')
+              ON {% for pk in srcColumnsPK -%}src.[{{pk.name}}] = sink.[{{pk.name}}] 
+              {%- if not loop.last %} AND {% endif -%}
+              {% endfor %}
+            WHERE src.dwRowChangeType in ('Update')
             )
           
-
           EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
           UPDATE [{{schemaName}}].[{{tableName}}] 
           SET 
