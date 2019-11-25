@@ -70,16 +70,18 @@ DECLARE @loadType nvarchar(10) = JSON_VALUE(@settings, '$.loadType')
 PRINT @settings
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @settings
 
-IF @dwHistoryDate != @now AND JSON_Value(@settings, '$.dwCurrentDate') = @now
-  RAISERROR ('%s object expects to have @dwCurrentDate value defined in reference.getMartParams()', 16, 1, @objectCode)
-IF @dwHistoryDate = @now AND JSON_Value(@settings, '$.dwCurrentDate') != @now
-  RAISERROR ('%s object expects to have @dwCurrentDate value undefined in reference.getMartParams()', 16, 1, @objectCode)
-IF @dwHistoryDate != @now AND JSON_Value(@settings, '$.dwCurrentDate') != @dwHistoryDate
-  RAISERROR ('%s object expects to have @dwCurrentDate settings value equal to @dwHistoryDate value', 16, 1, @objectCode)
-
 PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Start Execution'
 BEGIN TRY
+
+    -- exit if specified @dwHistoryDate value is incorrect
+    IF @dwHistoryDate != @now AND JSON_Value(@settings, '$.dwCurrentDate') = @now
+      RAISERROR ('%s object expects to have @dwCurrentDate value defined in reference.getMartParams()', 16, 1, @objectCode)
+    IF @dwHistoryDate = @now AND JSON_Value(@settings, '$.dwCurrentDate') != @now
+      RAISERROR ('%s object expects @dwCurrentDate undefined in reference.getMartParams()', 16, 1, @objectCode)
+    IF @dwHistoryDate != @now AND JSON_Value(@settings, '$.dwCurrentDate') != @dwHistoryDate
+      RAISERROR ('%s object expects to have @dwCurrentDate value equal to @dwHistoryDate', 16, 1, @objectCode)
+
     -- add all manual dependencies here
     -- TODO:  JSON Array list of dependencies to check before running
     DECLARE @dependencyList varchar(1000) = NULL 
@@ -161,8 +163,7 @@ BEGIN TRY
             WHEN sink.[{{skColumnName}}] IS NULL THEN 'New' 
             WHEN sink.dwHash != stg.dwHash THEN 'Update' 
             ELSE 'Skip' END,
-          dwHash = stg.dwHash,
-          dwLastVersion = sink.dwVersion
+          dwHash = stg.dwHash
         FROM #stage stg 
         LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
         ON {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
@@ -175,7 +176,7 @@ BEGIN TRY
           INSERT INTO #upsert (
             [{{skColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
             {% endif -%}{% endfor %}
-            dwRowChangeType, dwHash, dwLastVersion 
+            dwRowChangeType, dwHash
             )
           SELECT
             [{{skColumnName}}] = sink.[{{skColumnName}}],
@@ -183,11 +184,9 @@ BEGIN TRY
             [{{key.name}}] = sink.[{{key.name}}],
             {% endfor -%}
             dwRowChangeType = 'Delete',
-            dwHash = sink.dwHash,
-            dwLastVersion = sink.dwVersion
+            dwHash = sink.dwHash
           FROM [{{schemaName}}].[{{tableName}}] sink 
-          WHERE sink.dwIsCurrent = 1
-            AND NOT EXISTS (SELECT 1 FROM #stage src 
+          WHERE NOT EXISTS (SELECT 1 FROM #stage src 
               WHERE {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = src.[{{pk.name}}] {% if (loop.index % 3) === 0 or loop.last %}
               {% endif -%}{%- if not loop.last %} AND {% endif -%}{%- endfor %}
               )
@@ -206,22 +205,21 @@ BEGIN TRY
             WHERE src.dwRowChangeType in ('Update')
             )
           
-          EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
+          EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsDeleted flag'
           UPDATE [{{schemaName}}].[{{tableName}}] 
           SET 
             dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 1 ELSE 0 END
           FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
             {%- if not loop.last %} AND {% endif -%}{% if (loop.index % 3) === 0 or loop.last %}
             {% endif -%}{%- endfor %}
-            AND src.dwRowChangeType in ('Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 1
+            AND src.dwRowChangeType in ('Delete') 
 
           EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
           -- load new records
           INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
             {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
             {% endif -%}{% endfor %} 
-            dwSessionNo, dwPackageName, dwIsDeleted, dwStartDate, dwEndDate, 
-            dwIsCurrent, dwVersion, dwUpdateDate, dwHash
+            dwSessionNo, dwPackageName, dwIsDeleted, dwUpdateDate, dwHash
             )
           SELECT
             {% for key in columns -%}
@@ -230,13 +228,6 @@ BEGIN TRY
             dwSessionNo = @sessionNo,
             dwPackageName = @packageName,
             dwIsDeleted = 0,
-            dwStartDate = CASE 
-              -- #note: dwStartDate can base on src.<startDate>
-              WHEN src.dwLastVersion IS NULL AND @loadType = 'Initial' THEN @dwInitialDate 
-              ELSE @dwHistoryDate END,
-            dwEndDate = @dwEndDate,
-            dwIsCurrent = 1,
-            dwVersion = isNull(src.dwLastVersion, 0) + 1,
             dwUpdateDate = @now,
             dwHash = src.dwHash
           FROM #upsert src
@@ -299,83 +290,6 @@ BEGIN TRY
         IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
         IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
         IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
-        
-        
-        -- ************ History Data UnitTests ****************
-        EXEC reference.printLine '-- Run History Data UnitTests'        
-        DECLARE @checkCurrentFlag varchar(250)
-        DECLARE @checkStartDate varchar(250)
-        DECLARE @checkDeletedRows varchar(250)
-        DECLARE @checkCardinality varchar(250)
-
-        ;WITH 
-        S as (
-          SELECT keyId = [{{skColumnName}}], id = concat_ws(@separator, {%- for key in columnsPK -%}
-            {%- if key.dataType in dates %} convert(nvarchar(100), [{{key.name}}], 23)
-            {%- elif key.dataType in times %} convert(nvarchar(100), [{{key.name}}], 114)
-            {%- elif key.dataType in datetimes %} convert(nvarchar(100), [{{key.name}}], 121)
-            {%- else %} [{{key.name}}]
-            {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
-            {%- endif -%}
-            {%- endfor -%}, ''), 
-          dwStartDate, dwEndDate, dwIsCurrent = convert(int, dwIsCurrent)
-          FROM [{{schemaName}}].[{{tableName}}]),
-        DatePeriod as (
-          SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
-          FROM s WHERE keyId != -1
-          ),
-        TESTS AS (
-          SELECT curS.id, 
-              chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
-              cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
-              chk_start_date = CASE WHEN ISNULL( DATEADD(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END
-          FROM S curS 
-          LEFT JOIN S prevS 
-              ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
-          LEFT JOIN (SELECT id, 
-              SUM(dwIsCurrent) cnt_currentFlag,
-              SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
-              FROM S GROUP BY id) chkCurFlag 
-              ON curS.id = chkCurFlag.id 
-          ),
-        Cardinality as (
-          SELECT chk_cardinality = coalesce(SUM(countRows),0) FROM (
-            SELECT d.DateAlternateKey, s.id, COUNT(*) as countRows
-            FROM s 
-            JOIN reference.Date d ON d.dateAlternateKey between dateAdd(day, -3, @dwHistoryDate) AND @dwHistoryDate
-            AND d.dateAlternateKey between s.dwStartDate and s.dwEndDate
-            GROUP BY d.DateAlternateKey, s.id
-            HAVING COUNT(*)>1 
-          ) AA
-        )
-        -- DEBUG: select all failed records
-        -- SELECT * FROM TESTS WHERE chk_currentFlag != 0 OR cnt_deleted_rows != 0 OR chk_start_date != 0     
-        SELECT 
-            @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
-            @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
-            @checkDeletedRows = test.assertEqualsInt('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
-            @checkCardinality = test.assertEqualsInt('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
-        FROM TESTS CROSS JOIN Cardinality
-
-        -- Info
-        PRINT @checkCurrentFlag
-        PRINT @checkStartDate
-        
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
-        
-        -- Warnings
-        SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
-        SET @checkCardinality = REPLACE( @checkCardinality, 'TEST FAILED', 'WARNING!')
-        PRINT @checkDeletedRows
-        PRINT @checkCardinality
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkDeletedRows
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
-
-        -- Raise Errors
-        IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
-        IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
-    
     
         -- ************ ETL code ends here ****************                
 
