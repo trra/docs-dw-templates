@@ -143,8 +143,8 @@ BEGIN TRY
                 {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
                 {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
                 {%- else %} src.[{{key.name}}]
-                {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
-                {%- endif -%}
+                {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 2) === 0 or loop.last %}
+                {% endif -%}
                 {%- endfor -%}, ''))), 2)  
         FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
         
@@ -187,24 +187,33 @@ BEGIN TRY
             dwLastVersion = sink.dwVersion
           FROM [{{schemaName}}].[{{tableName}}] sink 
           WHERE sink.dwIsCurrent = 1
-            AND NOT EXISTS (SELECT 1 FROM #stage src WHERE {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = src.[{{pk.name}}] 
-              {%- if not loop.last %} AND {% endif -%}{%- endfor %})
+            AND NOT EXISTS (SELECT 1 FROM #stage src 
+              WHERE {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = src.[{{pk.name}}] {% if (loop.index % 3) === 0 or loop.last %}
+              {% endif -%}{%- if not loop.last %} AND {% endif -%}{%- endfor %}
+              )
             AND sink.[{{skColumnName}}] != -1 
         END          
 
         IF (@sessionNo != 'testSession') BEGIN
           EXEC reference.printLine '-- Delete [{{schemaName}}].[{{tableName}}] updating rows'
-          DELETE [{{schemaName}}].[{{tableName}}] 
-          FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
-            {%- if not loop.last %} AND {% endif -%}{%- endfor %}
-            AND src.dwRowChangeType in ('Update')
+          DELETE [{{schemaName}}].[{{tableName}}]
+          WHERE [{{skColumnName}}] IN (
+            SELECT sink.[{{skColumnName}}]
+            FROM #upsert src JOIN [{{schemaName}}].[{{tableName}}] sink
+            WHERE {% for pk in srcColumnsPK -%}src.[{{pk.name}}] = sink.[{{pk.name}}] 
+              {%- if not loop.last %} AND {% endif -%}{% if (loop.index % 3) === 0 or loop.last %}
+              {% endif -%}{%- endfor %}
+              AND src.dwRowChangeType in ('Update')
+            )
+          
 
           EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
           UPDATE [{{schemaName}}].[{{tableName}}] 
           SET 
             dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 1 ELSE 0 END
           FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
-            {%- if not loop.last %} AND {% endif -%}{%- endfor %}
+            {%- if not loop.last %} AND {% endif -%}{% if (loop.index % 3) === 0 or loop.last %}
+            {% endif -%}{%- endfor %}
             AND src.dwRowChangeType in ('Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 1
 
           EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
