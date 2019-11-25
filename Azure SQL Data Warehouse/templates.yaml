@@ -228,3 +228,25 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
+  - name: "Data Mart: Fact"
+    <<: *defaults
+    description: Data Mart fact table
+    templateFileName: Azure SQL Data Warehouse/dm.fact.njk
+    metaFolder: "/.code/dm/fact/.meta/"
+    outputFolder: "/.code/dm/fact/"
+    outputFileName: "{destSchema}.sp{ObjectName}.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name

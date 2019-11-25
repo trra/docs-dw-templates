@@ -30,7 +30,7 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
 AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
--- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into datamart SCD2 dimension table [{{schemaName}}].[{{tableName}}]
+-- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into datamart fact table [{{schemaName}}].[{{tableName}}]
 --
 -- Execution sample:
 -- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 
@@ -60,15 +60,22 @@ DECLARE @sinkObjectCode varchar(250) = CASE
   WHEN @dwHistoryDate = CAST(@now as datetime) THEN @objectCode 
   ELSE concat(@objectCode, 'History') END
 
--- read domain settings
-DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode), '$.dwInitialDate') as datetime)
-DECLARE @dwEndDate datetime = CAST(JSON_VALUE(reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode), '$.dwEndDate') as datetime)
-DECLARE @separator nvarchar(2) = JSON_VALUE(reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode), '$.separator')
-DECLARE @version nvarchar(10) = JSON_VALUE(reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode), '$.version')
-DECLARE @loadType nvarchar(10) = JSON_VALUE(reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode), '$.loadType')
-SET @message = reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode)
-PRINT @message
-EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+-- read datamart settings
+DECLARE @settings nvarchar(max) = reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode)
+DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(@settings, '$.dwInitialDate') as datetime)
+DECLARE @dwEndDate datetime = CAST(JSON_VALUE(@settings, '$.dwEndDate') as datetime)
+DECLARE @separator nvarchar(2) = JSON_VALUE(@settings, '$.separator')
+DECLARE @version nvarchar(10) = JSON_VALUE(@settings, '$.version')
+DECLARE @loadType nvarchar(10) = JSON_VALUE(@settings, '$.loadType')
+PRINT @settings
+EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @settings
+
+IF @dwHistoryDate != @now AND JSON_Value(@settings, '$.dwCurrentDate') = @now
+  RAISERROR ('%s object expects to have @dwCurrentDate value defined in reference.getMartParams()', 16, 1, @objectCode)
+IF @dwHistoryDate = @now AND JSON_Value(@settings, '$.dwCurrentDate') != @now
+  RAISERROR ('%s object expects to have @dwCurrentDate value undefined in reference.getMartParams()', 16, 1, @objectCode)
+IF @dwHistoryDate != @now AND JSON_Value(@settings, '$.dwCurrentDate') != @dwHistoryDate
+  RAISERROR ('%s object expects to have @dwCurrentDate settings value equal to @dwHistoryDate value', 16, 1, @objectCode)
 
 PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Start Execution'
@@ -108,52 +115,11 @@ BEGIN TRY
             dwSessionNo [varchar](50) NOT NULL,
             dwPackageName [varchar](100) NOT NULL,
             dwIsDeleted [bit] NOT NULL,
-            dwStartDate [datetime] NOT NULL,
-            dwEndDate [datetime] NOT NULL,
-            dwIsCurrent [bit] NOT NULL,
-            dwVersion [int] NOT NULL,
             dwUpdateDate [datetime] NOT NULL,
             dwHash [varchar](40) NOT NULL            
-          ) WITH ( DISTRIBUTION = REPLICATE, CLUSTERED INDEX ({{skColumnName}}) )
+          ) WITH ( DISTRIBUTION = ROUND_ROBIN, CLUSTERED COLUMNSTORE INDEX )
           -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
         END
-
-        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0 
-          DELETE [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 
-
-        IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1) = 0
-        BEGIN 
-          EXEC reference.printLine '-- Insert default -1 "Unknown" row'
-          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON
-          INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-            [{{skColumnName}}], 
-            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.last %}
-            {% endif -%}{%- endfor %}
-            dwSessionNo, dwPackageName, dwIsDeleted, dwStartDate, dwEndDate, 
-            dwIsCurrent, dwVersion, dwUpdateDate, dwHash
-          )
-          SELECT 
-            [{{skColumnName}}] = -1,
-            {%- for key in columns %} 
-            [{{key.name}}] = 
-            {%- if (key.dataType in integers ) %} -1, 
-              {%- elif (key.dataType in numbers) %} -1, 
-              {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
-              {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
-              {%- elif (key.dataType in largeObjects) %} null, 
-              {%- else %} null, {%- endif %}
-            {%- endfor %}
-            dwSessionNo = @sessionNo,
-            dwPackageName = @packageName,
-            dwIsDeleted = 0,
-            dwStartDate = @dwInitialDate,
-            dwEndDate = @dwEndDate,
-            dwIsCurrent = 1,
-            dwVersion = 1,
-            dwUpdateDate = @now,
-            dwHash = ''
-          SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
-        END 
 
         {% if query %}
         EXEC reference.printLine '-- Create #src'
@@ -181,43 +147,7 @@ BEGIN TRY
                 {%- endif -%}
                 {%- endfor -%}, ''))), 2)  
         FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
-        WHERE src.[{{columnsPK[0].name}}] != -1
         
-        IF (@sinkObjectCode != @objectCode) BEGIN
-          SET @message = concat('Restore initial state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
-          EXEC reference.printLine @message
-          IF OBJECT_ID('tempdb..#current') IS NOT NULL DROP TABLE #current
-          CREATE TABLE #current WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-          SELECT 
-            [{{skColumnName}}] = sink.[{{skColumnName}}],
-            {% for key in columns -%}
-            [{{key.name}}] = sink.[{{key.name}}],
-            {% endfor -%}
-            dwSessionNo = sink.dwSessionNo,
-            dwPackageName = sink.dwPackageName,
-            dwStartDate = sink.dwStartDate,
-            dwUpdateDate = sink.dwUpdateDate,
-            dwHash = sink.dwHash,
-            dwVersion = sink.dwVersion
-          FROM [{{schemaName}}].[{{tableName}}] sink
-          WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
-          
-          IF (@sessionNo != 'testSession') BEGIN
-            SET @message = concat('Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
-            EXEC reference.printLine @message
-            DELETE FROM [{{schemaName}}].[{{tableName}}] 
-            WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
-              AND [{{skColumnName}}] != -1
-            UPDATE [{{schemaName}}].[{{tableName}}] 
-            SET 
-              dwIsCurrent = 1, 
-              dwEndDate = @dwEndDate
-            FROM #current cur
-            WHERE [{{schemaName}}].[{{tableName}}].[{{skColumnName}}] = cur.[{{skColumnName}}] 
-              AND [{{schemaName}}].[{{tableName}}].dwVersion = isNull(cur.dwVersion, 0) - 1
-          END
-        END
-
         EXEC reference.printLine '-- Create #upsert'
         -- Create temp table to update existing and add new records
         IF OBJECT_ID('tempdb..#upsert') IS NOT NULL DROP TABLE #upsert
@@ -240,7 +170,7 @@ BEGIN TRY
 
         IF (@loadType = 'full') 
         BEGIN
-          EXEC reference.printLine '-- Full Load: Insert into [{{schemaName}}].[{{tableName}}] deleted rows'
+          EXEC reference.printLine '-- Full Load: Update [{{schemaName}}].[{{tableName}}] deleted rows'
           -- load new records
           INSERT INTO #upsert (
             [{{skColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
@@ -263,15 +193,19 @@ BEGIN TRY
         END          
 
         IF (@sessionNo != 'testSession') BEGIN
+          EXEC reference.printLine '-- Delete [{{schemaName}}].[{{tableName}}] updating rows'
+          DELETE [{{schemaName}}].[{{tableName}}] 
+          FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+            {%- if not loop.last %} AND {% endif -%}{%- endfor %}
+            AND src.dwRowChangeType in ('Update')
+
           EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
           UPDATE [{{schemaName}}].[{{tableName}}] 
           SET 
-            dwIsCurrent = 0,
-            dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 1 ELSE 0 END,
-            dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime))
+            dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 1 ELSE 0 END
           FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
             {%- if not loop.last %} AND {% endif -%}{%- endfor %}
-            AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 1
+            AND src.dwRowChangeType in ('Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 1
 
           EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
           -- load new records
