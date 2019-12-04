@@ -23,7 +23,7 @@
 {%- set mkColumnName = p.meta.object.name+'MK' -%}
 # {{schemaName}}.{{tableName}}
 
-Type: Domain Reference Table\
+Type: Domain Master Table\
 Git FileName: `{{ p.template.outputFileName }}`\
 Source: {% if query-%}SQL query{%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}\
 Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}\
@@ -41,11 +41,14 @@ Table "{{schemaName}}.{{tableName}}" {
   {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
   {%- endif %} [{%- for pk in columnsPK -%}{%- if pk.name===key.name %}note:"source PK" {%- endif -%}]{%- endfor -%} 
   {% endfor %}
-  dwSessionNo varchar 
+  dwSessionNo varchar
   dwPackageName varchar
-  dwStartDate datetime 
-  dwVersion int 
-  dwUpdateDate datetime 
+  dwIsDeleted bit
+  dwStartDate datetime
+  dwEndDate datetime
+  dwIsLastVersion bit
+  dwVersion int
+  dwUpdateDate datetime
   dwHash varchar
 } 
 ```
