@@ -20,10 +20,9 @@
 {%- set datetimes = ['datetime'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set skColumnName = p.meta.object.name+'SK' -%}
-{%- set mkColumnName = p.meta.object.name+'MK' -%}
 # {{schemaName}}.{{tableName}}
 
-Domain Master Table
+Domain Transaction Table
 
 > **FileName**: `{{ p.template.outputFileName }}`\
 **Source**: {% if query-%}SQL query{%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}\
@@ -36,7 +35,7 @@ EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 
 **Table structure:**
 ```text
-Table "{{schemaName}}.{{tableName}}" [headercolor: #316896] {
+Table "{{schemaName}}.{{tableName}}" [headercolor: #2c3e50] {
   {{skColumnName}} bigint [increment]
   {{mkColumnName}} bigint [pk, note: "Master Key"]
   {%- for key in columns %}
@@ -49,10 +48,7 @@ Table "{{schemaName}}.{{tableName}}" [headercolor: #316896] {
   //// -- internal DW columns
   dwSessionNo varchar
   dwPackageName varchar
-  dwIsDeleted bit
   dwStartDate datetime
-  dwEndDate datetime
-  dwIsLastVersion bit
   dwVersion int
   dwUpdateDate datetime
   dwHash varchar

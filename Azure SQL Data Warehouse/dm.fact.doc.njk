@@ -19,11 +19,10 @@
 {%- set times = ['time'] -%}
 {%- set datetimes = ['datetime'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
-{%- set skColumnName = p.meta.object.name+'SK' -%}
-{%- set mkColumnName = p.meta.object.name+'MK' -%}
+{%- set skColumnName = p.meta.object.name+'Key' -%}
 # {{schemaName}}.{{tableName}}
 
-Domain Master Table
+Datamart Fact Table 
 
 > **FileName**: `{{ p.template.outputFileName }}`\
 **Source**: {% if query-%}SQL query{%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}\
@@ -36,9 +35,8 @@ EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 
 **Table structure:**
 ```text
-Table "{{schemaName}}.{{tableName}}" [headercolor: #316896] {
-  {{skColumnName}} bigint [increment]
-  {{mkColumnName}} bigint [pk, note: "Master Key"]
+Table "{{schemaName}}.{{tableName}}" [headercolor: #2c3e50] {
+  {{skColumnName}} bigint [pk, increment]
   {%- for key in columns %}
   {{key.name}} {{key.dataType}}
   {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
@@ -50,10 +48,6 @@ Table "{{schemaName}}.{{tableName}}" [headercolor: #316896] {
   dwSessionNo varchar
   dwPackageName varchar
   dwIsDeleted bit
-  dwStartDate datetime
-  dwEndDate datetime
-  dwIsLastVersion bit
-  dwVersion int
   dwUpdateDate datetime
   dwHash varchar
 } 
