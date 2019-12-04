@@ -46,14 +46,14 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #3498db] {
   {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
   {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
   {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
-  {%- endif %} {%- for pk in columnsPK -%}{%- if pk.name===key.name %}[note:"source PK"] {%- endif -%}{%- endfor -%} 
+  {%- endif %} {%- for pk in columnsPK -%}{%- if pk.name===key.name %}[note:"source PK"] {%- endif -%}{%- endfor -%}
   {% endfor %}
   //// -- internal DW columns
-  dwSessionNo varchar 
+  dwSessionNo varchar
   dwPackageName varchar
-  dwStartDate datetime 
-  dwVersion int 
-  dwUpdateDate datetime 
+  dwStartDate datetime
+  dwVersion int
+  dwUpdateDate datetime
   dwHash varchar
-} 
+}
 ```
