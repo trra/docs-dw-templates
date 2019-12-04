@@ -28,14 +28,16 @@ Datamart Fact Table
 **Source**: {% if query-%}SQL query{%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}\
 Author/Date: {{ p.settings.author }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD') }}
 
-**Execution sample:** 
+**Execution sample:**
+
 ```sql
 EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 ```
 
 **Table structure:**
+
 ```text
-Table "{{schemaName}}.{{tableName}}" [headercolor: #2c3e50] {
+Table "{{schemaName}}.{{tableName}}" [headerColor: #2c3e50] {
   {{skColumnName}} bigint [pk, increment]
   {%- for key in columns %}
   {{key.name}} {{key.dataType}}

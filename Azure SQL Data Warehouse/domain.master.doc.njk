@@ -29,14 +29,16 @@ Domain Master Table
 **Source**: {% if query-%}SQL query{%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}\
 Author/Date: {{ p.settings.author }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD') }}
 
-**Execution sample:** 
+**Execution sample:**
+
 ```sql
 EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 ```
 
 **Table structure:**
+
 ```text
-Table "{{schemaName}}.{{tableName}}" [headercolor: #316896] {
+Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
   {{skColumnName}} bigint [increment]
   {{mkColumnName}} bigint [pk, note: "Master Key"]
   {%- for key in columns %}
