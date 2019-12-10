@@ -66,6 +66,6 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
 {% if query %}
 ### SQL Query
 ```sql
-{{query | safe | indent(0, true)}}
+{{query | safe | indent(2, true)}}
 ```
 {% endif %}
