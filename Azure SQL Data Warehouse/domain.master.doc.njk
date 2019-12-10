@@ -25,19 +25,20 @@
 
 Domain Master Table
 
-> **FileName**: `{{ p.template.outputFileName }}`\
-**Source**: {% if query-%}SQL query{%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}\
-Author/Date: {{ p.settings.author }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD') }}
+| |
+|-|
+| **FileName**: `{{ p.template.outputFileName }}`|
+|**Author / Created On:** {{ p.settings.author }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD') }}|
+|**Source**: {% if query-%}[SQL query](#SQL-Query){%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}|
+|**Primary Key(s):** {% for key in columnsPK %}`{{key.name}}`{% if loop.lasts %}, {% endif -%}{%- endfor %}|
 
-> Primary Key(s): {% for key in columnsPK %}`{{key.name}}`{% if loop.lasts %}, {% endif -%}{%- endfor %}
-
-**Execution sample:**
+### Execution sample
 
 ```sql
 EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 ```
 
-**Table structure:**
+### Table structure
 
 ```text
 Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
@@ -62,3 +63,10 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
   dwHash varchar
 }
 ```
+
+{% if query %}
+### SQL Query
+```sql
+{{query | safe | indent(0) }}
+```
+{% endif %}
