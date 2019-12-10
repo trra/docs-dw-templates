@@ -60,10 +60,9 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #3498db] {
   dwHash varchar
 }
 ```
-
 {% if query %}
 ### SQL Query
 ```sql
-{{query | safe | indent(0) }}
+{{query | safe | indent(4) | trim }}
 ```
 {% endif %}
