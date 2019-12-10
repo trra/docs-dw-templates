@@ -28,6 +28,8 @@ Datamart Fact Table
 **Source**: {% if query-%}SQL query{%- else -%}`[{{srcSchemaName}}].[{{srcTableName}}]`{%- endif %}\
 Author/Date: {{ p.settings.author }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD') }}
 
+> Primary Key(s): {%- for key in columnsPK %}`{{key.name}}`{% if loop.lasts %}, {% endif -%}{%- endfor %}
+
 **Execution sample:**
 
 ```sql
