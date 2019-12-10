@@ -64,6 +64,6 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
 {% if query %}
 ### SQL Query
 ```sql
-{{ query | safe | indent(2, true) | replace("\n\n","\n") }}
+{{ query | safe | indent(2, true) | replace("\n  \n", "\n") -}}
 ```
 {% endif %}
