@@ -89,8 +89,9 @@ EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionS
 IF @sessionStatus in ('Ready', 'Failed') BEGIN 
   EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
   BEGIN TRY
-  -- ************ ETL code starts here ****************
-  -- perform action
+    BEGIN TRAN
+    -- ************ ETL code starts here ****************
+    -- perform action
 
     IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
     BEGIN
@@ -451,8 +452,10 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     -- change object status to @sessionStatus
     EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+    COMMIT
   END TRY
   BEGIN CATCH
+    ROLLBACK
     -- change object status to 'Failed'
     SET @sessionStatus = 'Failed'
     SET @message = reference.setLogMessage('Dimension', 'Execution failed', 
