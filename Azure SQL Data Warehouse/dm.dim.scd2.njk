@@ -231,8 +231,8 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       BEGIN TRANSACTION
     
       -- Restore dataset on selected previous date
-      IF (@dwHistoryDate = CAST(@now as datetime)) BEGIN
-        SET @message = concat('Restore dataset state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
+      IF (@dwHistoryDate != CAST(@now as datetime)) BEGIN
+        SET @message = concat('-- Restore dataset state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
         EXEC reference.printLine @message
         IF OBJECT_ID('tempdb..#current') IS NOT NULL DROP TABLE #current
         CREATE TABLE #current WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
@@ -251,7 +251,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
         
         IF (@sessionNo != 'testSession') BEGIN
-          SET @message = concat('Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
+          SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
           EXEC reference.printLine @message
 
           DELETE FROM [{{schemaName}}].[{{tableName}}] 
