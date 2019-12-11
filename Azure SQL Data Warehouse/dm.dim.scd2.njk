@@ -244,12 +244,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       EXEC reference.printLine '-- Full Load: Insert into [{{schemaName}}].[{{tableName}}] deleted rows'
       -- load new records
       INSERT INTO #upsert (
-        [{{skColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
+        {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
         {% endif -%}{% endfor %}
         dwRowChangeType, dwHash, dwLastVersion 
         )
       SELECT DISTINCT
-        [{{skColumnName}}] = sink.[{{skColumnName}}],
         {% for key in columns -%}
         [{{key.name}}] = sink.[{{key.name}}],
         {% endfor -%}
@@ -442,7 +441,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     -- Raise Errors
     IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
     IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
-
+    IF (@checkVersion like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
 
     -- ************ ETL code ends here ****************                
 
