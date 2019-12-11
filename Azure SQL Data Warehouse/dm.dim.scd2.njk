@@ -146,7 +146,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {%- endfor %}
         dwSessionNo = @sessionNo,
         dwPackageName = @packageName,
-        dwIsDeleted = 0,
+        dwIsDeleted = 'FALSE',
         dwStartDate = @dwInitialDate,
         dwEndDate = @dwEndDate,
         dwIsCurrent = 'TRUE',
