@@ -201,7 +201,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       {%- if not loop.last %} AND {% endif -%}{% endfor %} 
     AND dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
     
-
     IF (@loadType = 'full') 
     BEGIN
       EXEC reference.printLine '-- Full Load: Insert into [{{schemaName}}].[{{tableName}}] deleted rows'
