@@ -382,7 +382,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {%- endfor -%}, ''), 
       dwStartDate, dwEndDate, dwIsCurrent = convert(int, dwIsCurrent),
       cntVersion = count(1) over (partition by {% for key in columnsPK -%}
-        [{{key.name}}]{%- endfor -%}, dwVersion)
+        [{{key.name}}], {% endfor %}dwVersion)
       FROM [{{schemaName}}].[{{tableName}}]),
     DatePeriod as (
       SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
