@@ -43,7 +43,7 @@ AS
 -- PR     	Date      	By	Comments
 -- ----   	----------	---	---------------------------------------------------------
 --
-SET XACT_ABORT, NOCOUNT ON;
+SET NOCOUNT ON;
 DECLARE @rowsRead INT, @rowsWritten INT
 DECLARE @message varchar(1000)
 DECLARE @sessionStatus varchar(50)
@@ -226,85 +226,82 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         AND dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
         AND sink.[{{skColumnName}}] != -1 
     END          
+  
+    -- Restore dataset on selected previous date
+    IF (@dwHistoryDate != CAST(@now as datetime)) BEGIN
+      SET @message = concat('-- Restore dataset state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
+      EXEC reference.printLine @message
+      IF OBJECT_ID('tempdb..#current') IS NOT NULL DROP TABLE #current
+      CREATE TABLE #current WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
+      SELECT 
+        [{{skColumnName}}] = sink.[{{skColumnName}}],
+        {% for key in columns -%}
+        [{{key.name}}] = sink.[{{key.name}}],
+        {% endfor -%}
+        dwSessionNo = sink.dwSessionNo,
+        dwPackageName = sink.dwPackageName,
+        dwStartDate = sink.dwStartDate,
+        dwUpdateDate = sink.dwUpdateDate,
+        dwHash = sink.dwHash,
+        dwVersion = sink.dwVersion
+      FROM [{{schemaName}}].[{{tableName}}] sink
+      WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
+      
+      IF @@trancount = 0 BEGIN TRANSACTION
+      SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
+      EXEC reference.printLine @message
 
-    IF (@sessionNo != 'testSession') BEGIN
-      BEGIN TRANSACTION
-    
-      -- Restore dataset on selected previous date
-      IF (@dwHistoryDate != CAST(@now as datetime)) BEGIN
-        SET @message = concat('-- Restore dataset state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
-        EXEC reference.printLine @message
-        IF OBJECT_ID('tempdb..#current') IS NOT NULL DROP TABLE #current
-        CREATE TABLE #current WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-        SELECT 
-          [{{skColumnName}}] = sink.[{{skColumnName}}],
-          {% for key in columns -%}
-          [{{key.name}}] = sink.[{{key.name}}],
-          {% endfor -%}
-          dwSessionNo = sink.dwSessionNo,
-          dwPackageName = sink.dwPackageName,
-          dwStartDate = sink.dwStartDate,
-          dwUpdateDate = sink.dwUpdateDate,
-          dwHash = sink.dwHash,
-          dwVersion = sink.dwVersion
-        FROM [{{schemaName}}].[{{tableName}}] sink
-        WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
-        
-        IF (@sessionNo != 'testSession') BEGIN
-          SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
-          EXEC reference.printLine @message
+      DELETE FROM [{{schemaName}}].[{{tableName}}] 
+      WHERE dwStartDate >= @dwHistoryDate
+        AND [{{skColumnName}}] != -1
 
-          DELETE FROM [{{schemaName}}].[{{tableName}}] 
-          WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
-            AND [{{skColumnName}}] != -1
-
-          UPDATE [{{schemaName}}].[{{tableName}}] 
-          SET 
-            dwIsCurrent = 'TRUE', 
-            dwEndDate = @dwEndDate
-          FROM #current cur
-          WHERE [{{schemaName}}].[{{tableName}}].[{{skColumnName}}] = cur.[{{skColumnName}}] 
-            AND [{{schemaName}}].[{{tableName}}].dwVersion = isNull(cur.dwVersion, 0) - 1
-        END
-      END
-
-      EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
       UPDATE [{{schemaName}}].[{{tableName}}] 
       SET 
-        dwIsCurrent = 'FALSE',
-        dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
-        dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime))
-      FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
-        {%- if not loop.last %} AND {% endif -%}{%- endfor %}
-        AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 'TRUE'
-
-      EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
-      -- load new records
-      INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-        {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-        {% endif -%}{% endfor %} 
-        dwSessionNo, dwPackageName, dwIsDeleted, dwStartDate, dwEndDate, 
-        dwIsCurrent, dwVersion, dwUpdateDate, dwHash
-        )
-      SELECT
-        {% for key in columns -%}
-        [{{key.name}}] = src.[{{key.name}}],
-        {% endfor -%}
-        dwSessionNo = @sessionNo,
-        dwPackageName = @packageName,
-        dwIsDeleted = 'FALSE',
-        dwStartDate = CASE 
-          -- #note: dwStartDate can base on src.<startDate>
-          WHEN src.dwLastVersion IS NULL AND @loadType = 'Initial' THEN @dwInitialDate 
-          ELSE @dwHistoryDate END,
-        dwEndDate = @dwEndDate,
-        dwIsCurrent = 'TRUE',
-        dwVersion = isNull(src.dwLastVersion, 0) + 1,
-        dwUpdateDate = @now,
-        dwHash = src.dwHash
-      FROM #upsert src
-      WHERE dwRowChangeType in ('New', 'Update')
+        dwIsCurrent = 'TRUE', 
+        dwEndDate = @dwEndDate
+      FROM #current cur
+      WHERE [{{schemaName}}].[{{tableName}}].[{{skColumnName}}] = cur.[{{skColumnName}}] 
+        AND [{{schemaName}}].[{{tableName}}].dwEndDate > @dwHistoryDate
     END
+
+    IF @@trancount = 0 BEGIN TRANSACTION
+    EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
+    UPDATE [{{schemaName}}].[{{tableName}}] 
+    SET 
+      dwIsCurrent = 'FALSE',
+      dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
+      dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime))
+    FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+      {%- if not loop.last %} AND {% endif -%}{%- endfor %}
+      AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 'TRUE'
+
+    EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
+    -- load new records
+    INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
+      {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
+      {% endif -%}{% endfor %} 
+      dwSessionNo, dwPackageName, dwIsDeleted, dwStartDate, dwEndDate, 
+      dwIsCurrent, dwVersion, dwUpdateDate, dwHash
+      )
+    SELECT
+      {% for key in columns -%}
+      [{{key.name}}] = src.[{{key.name}}],
+      {% endfor -%}
+      dwSessionNo = @sessionNo,
+      dwPackageName = @packageName,
+      dwIsDeleted = 'FALSE',
+      dwStartDate = CASE 
+        -- #note: dwStartDate can base on src.<startDate>
+        WHEN src.dwLastVersion IS NULL AND @loadType = 'Initial' THEN @dwInitialDate 
+        ELSE @dwHistoryDate END,
+      dwEndDate = @dwEndDate,
+      dwIsCurrent = 'TRUE',
+      dwVersion = isNull(src.dwLastVersion, 0) + 1,
+      dwUpdateDate = @now,
+      dwHash = src.dwHash
+    FROM #upsert src
+    WHERE dwRowChangeType in ('New', 'Update')
+  
 
     -- ************ Actual Data UnitTests **************** 
     EXEC reference.printLine '-- Run Actual Data UnitTests'
@@ -359,6 +356,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
 
     -- Raise Errors
+    IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
     IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
     IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
     IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
@@ -444,6 +442,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
 
     -- Raise Errors
+    IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
     IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
     IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
     IF (@checkVersion like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
@@ -461,6 +460,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   END TRY
   BEGIN CATCH
     IF @@trancount > 0 ROLLBACK TRANSACTION
+    
     -- change object status to 'Failed'
     SET @sessionStatus = 'Failed'
     SET @message = reference.setLogMessage('Dimension', 'Execution failed', 
