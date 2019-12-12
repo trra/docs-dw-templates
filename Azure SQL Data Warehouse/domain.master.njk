@@ -283,7 +283,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   -- Create temp table to update existing and add new records
   IF OBJECT_ID('tempdb..#upsert') IS NOT NULL DROP TABLE #upsert
   CREATE TABLE #upsert WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-  SELECT 
+  SELECT DISTINCT
     [{{skColumnName}}] = sink.[{{skColumnName}}],
     [{{mkColumnName}}] = stg.[{{mkColumnName}}],
     {% for key in columns -%}
@@ -298,6 +298,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   FROM #stage stg 
   LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
   ON sink.[{{mkColumnName}}] = stg.[{{mkColumnName}}]
+    AND sink.dwStartDate <= @dwHistoryDate
 
   IF (@loadType = 'full') 
   BEGIN
