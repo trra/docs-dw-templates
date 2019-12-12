@@ -506,6 +506,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   EXEC reference.printLine '-- Run History Data UnitTests'        
   DECLARE @checkCurrentFlag varchar(250)
   DECLARE @checkStartDate varchar(250)
+  DECLARE @checkVersion varchar(250)
   DECLARE @checkDeletedRows varchar(250)
   DECLARE @checkCardinality varchar(250)
 
