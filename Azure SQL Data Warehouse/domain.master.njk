@@ -284,21 +284,24 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   IF OBJECT_ID('tempdb..#upsert') IS NOT NULL DROP TABLE #upsert
   CREATE TABLE #upsert WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
   SELECT DISTINCT
-    [{{skColumnName}}] = sink.[{{skColumnName}}],
+    [{{skColumnName}}] = coalesce(sink.[{{skColumnName}}], sinkH.[{{skColumnName}}]),
     [{{mkColumnName}}] = stg.[{{mkColumnName}}],
     {% for key in columns -%}
     [{{key.name}}] = stg.[{{key.name}}],
     {% endfor -%}
     dwRowChangeType = CASE 
-      WHEN sink.[{{mkColumnName}}] IS NULL THEN 'New' 
-      WHEN sink.dwHash != stg.dwHash THEN 'Update' 
+      WHEN coalesce(sink.[{{mkColumnName}}], sinkH.[{{mkColumnName}}]) IS NULL THEN 'New' 
+      WHEN coalesce(sink.dwHash, sinkH.dwHash) != stg.dwHash THEN 'Update' 
       ELSE 'Skip' END,
     dwHash = stg.dwHash,
-    dwLastVersion = sink.dwVersion
+    dwLastVersion = coalesce(sink.dwVersion, sinkH.dwVersion)
   FROM #stage stg 
   LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
   ON sink.[{{mkColumnName}}] = stg.[{{mkColumnName}}]
     AND sink.dwStartDate <= @dwHistoryDate
+  LEFT JOIN [{{schemaName}}].[{{tableName}}History] sinkH
+  ON sinkH.[{{mkColumnName}}] = stg.[{{mkColumnName}}]
+    AND dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sinkH.dwStartDate and sinkH.dwEndDate 
 
   IF (@loadType = 'full') 
   BEGIN
