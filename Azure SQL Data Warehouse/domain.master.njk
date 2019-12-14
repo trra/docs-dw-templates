@@ -643,7 +643,7 @@ SELECT
   {% endfor -%}
   dwSessionNo, dwPackageName, dwIsDeleted = 'FALSE',
   dwStartDate, dwEndDate = CAST(JSON_VALUE(params.value, '$.dwEndDate') as datetime), 
-  dwIsCurrent = 'TRUE', dwVersion, dwUpdateDate, dwHash
+  dwIsCurrent = cast('TRUE' as bit), dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}] cur
 CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
 WHERE CAST(JSON_VALUE(params.value, '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(params.value, '$.dwEndDate') as datetime)
@@ -655,7 +655,7 @@ SELECT
   {% endfor -%}
   dwSessionNo, dwPackageName, dwIsDeleted,
   dwStartDate, dwEndDate, 
-  dwIsCurrent = 'FALSE', dwVersion, dwUpdateDate, dwHash
+  dwIsCurrent = cast('FALSE' as bit), dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}History] hist
 CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
 WHERE ABS(DATEDIFF(second, getUtcDate(),
