@@ -264,6 +264,7 @@ BEGIN TRY
               FROM [{{schemaName}}].[{{tableName}}] sink 
               LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
               WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
+                AND sink.dwIsDeleted = 'FALSE'
               )
         SELECT 
             @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),

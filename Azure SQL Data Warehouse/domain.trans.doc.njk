@@ -42,7 +42,6 @@ EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 ```text
 Table "{{schemaName}}.{{tableName}}" [headerColor: #2c3e50] {
   {{skColumnName}} bigint [increment]
-  {{mkColumnName}} bigint [pk, note: "Master Key"]
   {%- for key in columns %}
   {{key.name}} {{key.dataType}}
   {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
