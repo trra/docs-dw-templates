@@ -56,9 +56,6 @@ DECLARE @procName varchar(250)   = '{{schemaName}}.sp{{tableName}}' -- current p
 DECLARE @now datetime = getUtcDate()
 DECLARE @nowNZ datetime = reference.getLocalDate(@now, 'NZ')
 SET @dwHistoryDate = isNull(@dwHistoryDate, @now)
-DECLARE @sinkObjectCode varchar(250) = CASE 
-  WHEN @dwHistoryDate = CAST(@now as datetime) THEN @objectCode 
-  ELSE concat(@objectCode, 'History') END
 
 -- read datamart settings
 DECLARE @settings nvarchar(max) = reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode)
@@ -73,245 +70,253 @@ EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @se
 
 PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Start Execution'
-BEGIN TRY
 
-    PRINT 'dwCurrentDate: '+ FORMAT(@dwCurrentDate,'yyyy-MM-ddTHH:mm:ssZ')
-    PRINT 'now: '+ FORMAT(@now,'yyyy-MM-ddTHH:mm:ssZ')
-    -- exit if specified @dwHistoryDate value is incorrect
-    IF @dwHistoryDate != @now AND abs(dateDiff(second, @dwCurrentDate, @now)) <= 1
-      RAISERROR ('%s object expects to have @dwCurrentDate value defined in reference.getMartParams()', 16, 1, @objectCode)
-    IF @dwHistoryDate = @now AND abs(dateDiff(second, @dwCurrentDate, @now)) > 1
-      RAISERROR ('%s object expects @dwCurrentDate undefined in reference.getMartParams()', 16, 1, @objectCode)
-    IF @dwHistoryDate != @now AND abs(dateDiff(second, @dwCurrentDate, @dwHistoryDate)) > 1
-      RAISERROR ('%s object expects to have @dwCurrentDate value equal to @dwHistoryDate', 16, 1, @objectCode)
+PRINT 'dwCurrentDate: '+ FORMAT(@dwCurrentDate,'yyyy-MM-ddTHH:mm:ssZ')
+PRINT 'now: '+ FORMAT(@now,'yyyy-MM-ddTHH:mm:ssZ')
+-- exit if specified @dwHistoryDate value is incorrect
+IF @dwHistoryDate != @now AND abs(dateDiff(second, @dwCurrentDate, @now)) <= 1
+  RAISERROR ('%s object expects to have @dwCurrentDate value defined in reference.getMartParams()', 16, 1, @objectCode)
+IF @dwHistoryDate = @now AND abs(dateDiff(second, @dwCurrentDate, @now)) > 1
+  RAISERROR ('%s object expects @dwCurrentDate undefined in reference.getMartParams()', 16, 1, @objectCode)
+IF @dwHistoryDate != @now AND abs(dateDiff(second, @dwCurrentDate, @dwHistoryDate)) > 1
+  RAISERROR ('%s object expects to have @dwCurrentDate value equal to @dwHistoryDate', 16, 1, @objectCode)
 
-    -- add all manual dependencies here
-    -- TODO:  JSON Array list of dependencies to check before running
-    DECLARE @dependencyList varchar(1000) = NULL 
-    {% if srcTables %}
-    {%- for srcTable in srcTables -%}
-    -- EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
-    {% endfor -%}
-    {%- else -%}
-    -- EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
-    {%- endif %}
-    -- always check for session status AFTER adding new dependencies
-    EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
+-- add all manual dependencies here
+DECLARE @dependencyList varchar(1000) = NULL 
+{% if srcTables %}
+{%- for srcTable in srcTables -%}
+-- EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
+{% endfor -%}
+{%- else -%}
+-- EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
+{%- endif %}
+-- always check for session status AFTER adding new dependencies
+EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
 
-    IF @sessionStatus in ('Ready', 'Failed') BEGIN 
-        EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
-        -- ************ ETL code starts here ****************
-        -- perform action
+IF @sessionStatus in ('Ready', 'Failed') BEGIN 
+  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
+  BEGIN TRY
+    -- ************ ETL code starts here ****************
+    -- perform action
 
-        IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
-        BEGIN
-          EXEC reference.printLine '-- Create table [{{schemaName}}].[{{tableName}}]'
-          CREATE TABLE [{{schemaName}}].[{{tableName}}] (
-            [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-            {%- for key in columns %}
-            [{{key.name}}] [{{key.dataType}}] 
-            {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
-            {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
-            {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
-            {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
-            {{- "," -}}
-            {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
-            {% endfor %}
-            dwSessionNo [varchar](50) NOT NULL,
-            dwPackageName [varchar](100) NOT NULL,
-            dwIsDeleted [bit] NOT NULL,
-            dwUpdateDate [datetime] NOT NULL,
-            dwHash [varchar](40) NOT NULL            
-          ) WITH ( DISTRIBUTION = ROUND_ROBIN, CLUSTERED COLUMNSTORE INDEX )
-          -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
-        END
-
-        {% if query %}
-        EXEC reference.printLine '-- Create #src'
-        IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
-        CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-        {{query | safe | indent(8) }}
-        {% endif %}
-
-        EXEC reference.printLine '-- Create #stage'
-        -- Create temp source table with foreign key(s)
-        IF OBJECT_ID('tempdb..#stage') IS NOT NULL DROP TABLE #stage
-        CREATE TABLE #stage WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-        SELECT 
-          {% for key in srcColumns -%}
-          [{{key.name}}] = src.[{{key.name}}],
-          {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
-          {% endfor -%}
-          dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), 
-            concat_ws(@separator, {%- for key in srcColumns -%}
-                {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
-                {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
-                {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
-                {%- else %} src.[{{key.name}}]
-                {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 2) === 0 or loop.last %}
-                {% endif -%}
-                {%- endfor -%}, ''))), 2)  
-        FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
-        
-        EXEC reference.printLine '-- Create #upsert'
-        -- Create temp table to update existing and add new records
-        IF OBJECT_ID('tempdb..#upsert') IS NOT NULL DROP TABLE #upsert
-        CREATE TABLE #upsert WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-        SELECT 
-          [{{skColumnName}}] = sink.[{{skColumnName}}],
-          {% for key in columns -%}
-          [{{key.name}}] = stg.[{{key.name}}],
-          {% endfor -%}
-          dwRowChangeType = CASE 
-            WHEN sink.[{{skColumnName}}] IS NULL THEN 'New' 
-            WHEN sink.dwHash != stg.dwHash THEN 'Update' 
-            ELSE 'Skip' END,
-          dwHash = stg.dwHash
-        FROM #stage stg 
-        LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
-        ON {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
-          {%- if not loop.last %} AND {% endif -%}{% endfor %} 
-
-        IF (@loadType = 'full') 
-        BEGIN
-          EXEC reference.printLine '-- Full Load: Update [{{schemaName}}].[{{tableName}}] deleted rows'
-          -- load new records
-          INSERT INTO #upsert (
-            [{{skColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-            {% endif -%}{% endfor %}
-            dwRowChangeType, dwHash
-            )
-          SELECT
-            [{{skColumnName}}] = sink.[{{skColumnName}}],
-            {% for key in columns -%}
-            [{{key.name}}] = sink.[{{key.name}}],
-            {% endfor -%}
-            dwRowChangeType = 'Delete',
-            dwHash = sink.dwHash
-          FROM [{{schemaName}}].[{{tableName}}] sink 
-          WHERE NOT EXISTS (SELECT 1 FROM #stage src 
-              WHERE {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = src.[{{pk.name}}] {% if (loop.index % 3) === 0 or loop.last %}
-              {% endif -%}{%- if not loop.last %} AND {% endif -%}{%- endfor %}
-              )
-            AND sink.[{{skColumnName}}] != -1 
-        END          
-
-        IF (@sessionNo != 'testSession') BEGIN
-          EXEC reference.printLine '-- Delete [{{schemaName}}].[{{tableName}}] updating rows'
-          DELETE [{{schemaName}}].[{{tableName}}]
-          WHERE [{{skColumnName}}] IN (
-            SELECT sink.[{{skColumnName}}]
-            FROM #upsert src JOIN [{{schemaName}}].[{{tableName}}] sink
-              ON {% for pk in srcColumnsPK -%}src.[{{pk.name}}] = sink.[{{pk.name}}] 
-              {%- if not loop.last %} AND {% endif -%}
-              {% endfor %}
-            WHERE src.dwRowChangeType in ('Update')
-            )
-          
-          EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsDeleted flag'
-          UPDATE [{{schemaName}}].[{{tableName}}] 
-          SET 
-            dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 1 ELSE 0 END
-          FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
-            {%- if not loop.last %} AND {% endif -%}{% if (loop.index % 3) === 0 or loop.last %}
-            {% endif -%}{%- endfor %}
-            AND src.dwRowChangeType in ('Delete') 
-
-          EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
-          -- load new records
-          INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-            {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-            {% endif -%}{% endfor %} 
-            dwSessionNo, dwPackageName, dwIsDeleted, dwUpdateDate, dwHash
-            )
-          SELECT
-            {% for key in columns -%}
-            [{{key.name}}] = src.[{{key.name}}],
-            {% endfor -%}
-            dwSessionNo = @sessionNo,
-            dwPackageName = @packageName,
-            dwIsDeleted = 0,
-            dwUpdateDate = @now,
-            dwHash = src.dwHash
-          FROM #upsert src
-          WHERE dwRowChangeType in ('New', 'Update')
-        END
-
-        -- ************ Actual Data UnitTests **************** 
-        EXEC reference.printLine '-- Run Actual Data UnitTests'
-        DECLARE @checkTotalQuantity varchar(250)
-        DECLARE @checkQuantityPK varchar(250)
-        DECLARE @checkQuantityLimit varchar(250)
-        DECLARE @checkNullPK varchar(250)
-        DECLARE @expectCountMin bigInt, @expectCountMax bigInt
-        EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
-        ;WITH 
-            Expect as (SELECT expectCount = count(*) FROM #stage),
-            Actual as (
-              SELECT 
-                actualCount = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),
-                actualCountPK = COUNT(DISTINCT CASE
-                    WHEN sink.[{{skColumnName}}] = -1 THEN NULL
-                    ELSE concat_ws(@separator, {%- for key in columnsPK -%}
-                      {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
-                      {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
-                      {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
-                      {%- else %} sink.[{{key.name}}]
-                      {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
-                      {%- endif -%}
-                      {%- endfor -%}, '') END),   
-                actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
-              FROM [{{schemaName}}].[{{tableName}}] sink 
-              LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
-              WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
-                AND sink.dwIsDeleted = 'FALSE'
-              )
-        SELECT 
-            @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
-            @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
-            @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
-                CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
-            @checkNullPK = test.assertEqualsInt('checkNullPK (PK has NULL values)', 0, actualNullPK),
-            @rowsRead = expectCount, @rowsWritten = actualCount
-        FROM Actual CROSS JOIN Expect
-
-        -- Info
-        PRINT @checkTotalQuantity
-        PRINT @checkQuantityPK
-        PRINT @checkQuantityLimit
-        
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
-
-        -- Raise Errors
-        IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
-        IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
-        IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
-        IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
-    
-        -- ************ ETL code ends here ****************                
-
-        SET @sessionStatus = 'Succeeded'
-        SET @message = etl.setLogMessage('Fact', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
-
-        -- change object status to @sessionStatus
-        EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
-    END 
-    ELSE BEGIN -- else skip this step
-        SET @message = etl.setLogMessage('Fact', 'Skip this step', NULL, @sessionStatus)
-        EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
+    BEGIN
+      EXEC reference.printLine '-- Create table [{{schemaName}}].[{{tableName}}]'
+      CREATE TABLE [{{schemaName}}].[{{tableName}}] (
+        [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
+        {%- for key in columns %}
+        [{{key.name}}] [{{key.dataType}}] 
+        {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
+        {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
+        {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+        {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
+        {{- "," -}}
+        {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+        {% endfor %}
+        dwSessionNo [varchar](50) NOT NULL,
+        dwPackageName [varchar](100) NOT NULL,
+        dwIsDeleted [bit] NOT NULL,
+        dwUpdateDate [datetime] NOT NULL,
+        dwHash [varchar](40) NOT NULL            
+      ) WITH ( DISTRIBUTION = ROUND_ROBIN, CLUSTERED COLUMNSTORE INDEX )
+      -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
     END
+
+    {% if query %}
+    EXEC reference.printLine '-- Create #src'
+    IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
+    CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
+    {{query | safe | indent(8) }}
+    {% endif %}
+
+    EXEC reference.printLine '-- Create #stage'
+    -- Create temp source table with foreign key(s)
+    IF OBJECT_ID('tempdb..#stage') IS NOT NULL DROP TABLE #stage
+    CREATE TABLE #stage WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
+    SELECT
+      {% for key in srcColumns -%}
+      [{{key.name}}] = src.[{{key.name}}],
+      {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
+      {% endfor -%}
+      dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), 
+        concat_ws(@separator, {%- for key in srcColumns -%}
+            {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
+            {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
+            {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
+            {%- else %} src.[{{key.name}}]
+            {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 2) === 0 or loop.last %}
+            {% endif -%}
+            {%- endfor -%}, ''))), 2)  
+    FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
+    
+    EXEC reference.printLine '-- Create #upsert'
+    -- Create temp table to update existing and add new records
+    IF OBJECT_ID('tempdb..#upsert') IS NOT NULL DROP TABLE #upsert
+    CREATE TABLE #upsert WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
+    SELECT DISTINCT
+      [{{skColumnName}}] = sink.[{{skColumnName}}],
+      {% for key in columns -%}
+      [{{key.name}}] = stg.[{{key.name}}],
+      {% endfor -%}
+      dwRowChangeType = CASE 
+        WHEN sink.[{{skColumnName}}] IS NULL THEN 'New' 
+        WHEN sink.dwHash != stg.dwHash THEN 'Update' 
+        ELSE 'Skip' END,
+      dwHash = stg.dwHash
+    FROM #stage stg 
+    LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
+    ON {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
+      {%- if not loop.last %} AND {% endif -%}{% endfor %} 
+      AND sink.dwIsDeleted = 'FALSE'
+
+    IF (@loadType = 'full') 
+    BEGIN
+      EXEC reference.printLine '-- Full Load: Update [{{schemaName}}].[{{tableName}}] deleted rows'
+      -- load new records
+      INSERT INTO #upsert (
+        [{{skColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
+        {% endif -%}{% endfor %}
+        dwRowChangeType, dwHash
+        )
+      SELECT
+        [{{skColumnName}}] = sink.[{{skColumnName}}],
+        {% for key in columns -%}
+        [{{key.name}}] = sink.[{{key.name}}],
+        {% endfor -%}
+        dwRowChangeType = 'Delete',
+        dwHash = sink.dwHash
+      FROM [{{schemaName}}].[{{tableName}}] sink 
+      WHERE NOT EXISTS (SELECT 1 FROM #stage src 
+          WHERE {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = src.[{{pk.name}}] {% if (loop.index % 3) === 0 or loop.last %}
+          {% endif -%}{%- if not loop.last %} AND {% endif -%}{%- endfor %}
+          )
+        AND sink.[{{skColumnName}}] != -1 
+      AND sink.dwIsDeleted = 'FALSE'
+    END          
+
+  IF @@trancount = 0 BEGIN TRANSACTION
+  EXEC reference.printLine '-- Delete [{{schemaName}}].[{{tableName}}] updating rows'
+  DELETE [{{schemaName}}].[{{tableName}}]
+  WHERE [{{skColumnName}}] IN (
+    SELECT sink.[{{skColumnName}}]
+    FROM #upsert src JOIN [{{schemaName}}].[{{tableName}}] sink
+      ON {% for pk in srcColumnsPK -%}src.[{{pk.name}}] = sink.[{{pk.name}}] 
+      {%- if not loop.last %} AND {% endif -%}
+      {% endfor %}
+    WHERE src.dwRowChangeType in ('Update')
+    )
+    AND dwIsDeleted = 'FALSE'
+
+  EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsDeleted flag'
+  UPDATE [{{schemaName}}].[{{tableName}}] 
+  SET 
+    dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END
+  FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+    {%- if not loop.last %} AND {% endif -%}{% if (loop.index % 3) === 0 or loop.last %}
+    {% endif -%}{%- endfor %}
+    AND src.dwRowChangeType in ('Delete') 
+    AND dwIsDeleted = 'FALSE'
+
+  EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
+  -- load new records
+  INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
+    {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
+    {% endif -%}{% endfor %} 
+    dwSessionNo, dwPackageName, dwIsDeleted, dwUpdateDate, dwHash
+    )
+  SELECT
+    {% for key in columns -%}
+    [{{key.name}}] = src.[{{key.name}}],
+    {% endfor -%}
+    dwSessionNo = @sessionNo,
+    dwPackageName = @packageName,
+    dwIsDeleted = 'FALSE',
+    dwUpdateDate = @now,
+    dwHash = src.dwHash
+  FROM #upsert src
+  WHERE dwRowChangeType in ('New', 'Update')
+
+
+  -- ************ Actual Data UnitTests **************** 
+  EXEC reference.printLine '-- Run Actual Data UnitTests'
+  DECLARE @checkTotalQuantity varchar(250)
+  DECLARE @checkQuantityPK varchar(250)
+  DECLARE @checkQuantityLimit varchar(250)
+  DECLARE @checkNullPK varchar(250)
+  DECLARE @expectCountMin bigInt, @expectCountMax bigInt
+  EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
+  ;WITH 
+      Expect as (SELECT expectCount = count(*) FROM #stage),
+      Actual as (
+        SELECT 
+          actualCount = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),
+          actualCountPK = COUNT(DISTINCT CASE
+              WHEN sink.[{{skColumnName}}] = -1 THEN NULL
+              ELSE concat_ws(@separator, {%- for key in columnsPK -%}
+                {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
+                {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
+                {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
+                {%- else %} sink.[{{key.name}}]
+                {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
+                {%- endif -%}
+                {%- endfor -%}, '') END),   
+          actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+        FROM [{{schemaName}}].[{{tableName}}] sink 
+        LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
+        WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
+          AND sink.dwIsDeleted = 'FALSE'
+        )
+  SELECT 
+      @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
+      @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
+      @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
+          CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
+      @checkNullPK = test.assertEqualsInt('checkNullPK (PK has NULL values)', 0, actualNullPK),
+      @rowsRead = expectCount, @rowsWritten = actualCount
+  FROM Actual CROSS JOIN Expect
+
+  -- Info
+  PRINT @checkTotalQuantity
+  PRINT @checkQuantityPK
+  PRINT @checkQuantityLimit
+  
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
+
+  -- Raise Errors
+  IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
+  IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
+  IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
+  IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
+  IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
+
+  -- ************ ETL code ends here ****************                
+
+  SET @sessionStatus = 'Succeeded'
+  SET @message = etl.setLogMessage('Fact', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+  -- change object status to @sessionStatus
+  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+
+  IF @@trancount > 0 COMMIT TRANSACTION
 END TRY
 BEGIN CATCH
-    -- change object status to 'Failed'
-    SET @sessionStatus = 'Failed'
-    SET @message = reference.setLogMessage('Fact', 'Execution failed', 
-                reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
-                @sessionStatus)
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+  IF @@trancount > 0 ROLLBACK TRANSACTION
+  
+  -- change object status to 'Failed'
+  SET @sessionStatus = 'Failed'
+  SET @message = reference.setLogMessage('Fact', 'Execution failed', 
+              reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
+              @sessionStatus)
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 
-    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
-    RAISERROR (@message, 16, 1)
+  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
+  RAISERROR (@message, 16, 1)
 END CATCH
+END 
+ELSE BEGIN -- else skip this step
+  SET @message = etl.setLogMessage('Fact', 'Skip this step', NULL, @sessionStatus)
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+END
