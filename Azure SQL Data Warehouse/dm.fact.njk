@@ -154,7 +154,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     IF OBJECT_ID('tempdb..#upsert') IS NOT NULL DROP TABLE #upsert
     CREATE TABLE #upsert WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
     SELECT DISTINCT
-      [{{skColumnName}}] = sink.[{{skColumnName}}],
       {% for key in columns -%}
       [{{key.name}}] = stg.[{{key.name}}],
       {% endfor -%}
@@ -174,12 +173,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       EXEC reference.printLine '-- Full Load: Update [{{schemaName}}].[{{tableName}}] deleted rows'
       -- load new records
       INSERT INTO #upsert (
-        [{{skColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
+        {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
         {% endif -%}{% endfor %}
         dwRowChangeType, dwHash
         )
       SELECT
-        [{{skColumnName}}] = sink.[{{skColumnName}}],
         {% for key in columns -%}
         [{{key.name}}] = sink.[{{key.name}}],
         {% endfor -%}
@@ -304,7 +302,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 END TRY
 BEGIN CATCH
   IF @@trancount > 0 ROLLBACK TRANSACTION
-  
+
   -- change object status to 'Failed'
   SET @sessionStatus = 'Failed'
   SET @message = reference.setLogMessage('Fact', 'Execution failed', 
