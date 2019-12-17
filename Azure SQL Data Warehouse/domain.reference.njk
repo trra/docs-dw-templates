@@ -366,6 +366,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     IF @@trancount = 0 BEGIN TRANSACTION
     SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
+    EXEC reference.printLine @message
     DELETE FROM [{{schemaName}}].[{{tableName}}] 
     WHERE [{{mkColumnName}}] != -1
 
