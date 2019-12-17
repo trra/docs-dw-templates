@@ -241,20 +241,16 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       {{ 'AND ' if not loop.last }}{%- endfor -%}
       AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
     
-    SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
     INSERT INTO [{{schemaName}}].[{{tableName}}] (
-      [{{skColumnName}}],
       {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
       {% endif -%}{% endfor -%}
       dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
     )
     SELECT 
-      [{{skColumnName}}],
       {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
       {% endif -%}{% endfor -%}
       dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
     FROM #current
-    SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF;
   END
 
   IF (@loadType = 'full') 
