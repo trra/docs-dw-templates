@@ -64,6 +64,8 @@ DECLARE @dwEndDate datetime = CAST(JSON_VALUE(@settings, '$.dwEndDate') as datet
 DECLARE @dwCurrentDate datetime = CAST(JSON_VALUE(@settings, '$.dwCurrentDate') as datetime)
 DECLARE @separator nvarchar(2) = JSON_VALUE(@settings, '$.separator')
 DECLARE @version nvarchar(10) = JSON_VALUE(@settings, '$.version')
+-- reload #upsert 'Skip' rows
+DECLARE @skipExisting bit = CAST(JSON_VALUE(@settings, '$.skipExisting') as bit)
 DECLARE @loadType nvarchar(10) = JSON_VALUE(@settings, '$.loadType')
 PRINT @settings
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @settings
@@ -201,7 +203,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       ON {% for pk in srcColumnsPK -%}src.[{{pk.name}}] = sink.[{{pk.name}}] 
       {%- if not loop.last %} AND {% endif -%}
       {% endfor %}
-    WHERE src.dwRowChangeType in ('Update')
+    WHERE src.dwRowChangeType in ('Update', case when @skipExisting = 'TRUE' then 'Skip' end)
     )
     AND dwIsDeleted = 'FALSE'
 
@@ -232,7 +234,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     dwUpdateDate = @now,
     dwHash = src.dwHash
   FROM #upsert src
-  WHERE dwRowChangeType in ('New', 'Update')
+  WHERE dwRowChangeType in ('New', 'Update', case when @skipExisting = 'TRUE' then 'Skip' end)
 
 
   -- ************ Actual Data UnitTests **************** 
