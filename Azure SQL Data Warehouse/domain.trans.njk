@@ -352,7 +352,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       {{ 'AND ' if not loop.last -}}{%- endfor -%}
     )
   AND dwUpdateDate != @now
-END
 
   -- ************ Actual Data UnitTests **************** 
   EXEC reference.printLine '-- Run Actual Data UnitTests'
@@ -400,6 +399,7 @@ END
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
 
   -- Raise Errors
+  IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
   IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
   IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
   IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
@@ -410,6 +410,7 @@ END
   EXEC reference.printLine '-- Run History Data UnitTests'        
   DECLARE @checkCurrentFlag varchar(250)
   DECLARE @checkStartDate varchar(250)
+  DECLARE @checkVersion varchar(250)
   DECLARE @checkDeletedRows varchar(250)
   DECLARE @checkCardinality varchar(250)
 
@@ -422,7 +423,15 @@ END
                 {%- endif -%}{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 and not loop.last %}
                 {% endif -%}
               {%- endfor %}), 
-    dwStartDate, dwEndDate, dwIsCurrent = 0
+    dwStartDate, dwEndDate, dwIsCurrent = 0,
+    cntVersion = count(1) over (partition by {% for key in columnsPK -%}
+        {%- if key.dataType in dates %}convert(nvarchar(100), [{{key.name}}], 23)
+                {%- elif key.dataType in times %}convert(nvarchar(100), [{{key.name}}], 114)
+                {%- elif key.dataType in datetimes %}convert(nvarchar(100), [{{key.name}}], 121)
+                {%- else %}[{{key.name}}]
+                {%- endif -%}, {% if (loop.index % 3) === 0 and not loop.last %}
+                {% endif -%}
+              {%- endfor %}dwVersion)
     FROM [{{schemaName}}].[{{tableName}}History] UNION
     SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK -%}
                 {%- if pk.dataType in dates %}convert(nvarchar(100), [{{pk.name}}], 23)
@@ -432,7 +441,15 @@ END
                 {%- endif -%}{{-', ' if not loop.last -}}{% if (loop.index % 3) === 0 and not loop.last %}
                 {% endif -%}
               {%- endfor %}), 
-    dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1
+    dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1,
+    cntVersion = count(1) over (partition by {% for key in columnsPK -%}
+      {%- if key.dataType in dates %}convert(nvarchar(100), [{{key.name}}], 23)
+                {%- elif key.dataType in times %}convert(nvarchar(100), [{{key.name}}], 114)
+                {%- elif key.dataType in datetimes %}convert(nvarchar(100), [{{key.name}}], 121)
+                {%- else %}[{{key.name}}]
+                {%- endif -%}, {% if (loop.index % 3) === 0 and not loop.last %}
+                {% endif -%}
+              {%- endfor %}dwVersion)
     FROM [{{schemaName}}].[{{tableName}}]),
   DatePeriod as (
     SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
@@ -442,15 +459,16 @@ END
     SELECT curS.id, 
       chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
       cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
-      chk_start_date = CASE WHEN ISNULL( DATEADD(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END
+      chk_start_date = CASE WHEN ISNULL(dateAdd(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END,
+      chk_version = CASE WHEN ISNULL(curS.cntVersion, 1) != 1 THEN 1 ELSE 0 END
     FROM S curS 
     LEFT JOIN S prevS 
       ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
     LEFT JOIN (SELECT id, 
       SUM(dwIsCurrent) cnt_currentFlag,
       SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
-      FROM S GROUP BY id
-    ) chkCurFlag ON curS.id = chkCurFlag.id 
+      FROM S GROUP BY id) chkCurFlag 
+      ON curS.id = chkCurFlag.id 
   ),
   Cardinality as (
     SELECT chk_cardinality = coalesce(SUM(countRows),0) FROM (
@@ -467,6 +485,7 @@ END
   SELECT 
       @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
       @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
+      @checkVersion = test.assertEqualsInt('checkVersion (unique)', 0, sum(chk_version)),
       @checkDeletedRows = test.assertEqualsInt('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
       @checkCardinality = test.assertEqualsInt('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
   FROM TESTS CROSS JOIN Cardinality
@@ -474,9 +493,11 @@ END
   -- Info
   PRINT @checkCurrentFlag
   PRINT @checkStartDate
+  PRINT @checkVersion
   
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
   
   -- Warnings
   SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
@@ -487,9 +508,10 @@ END
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
 
   -- Raise Errors
+  IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
   IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
   IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
-
+  IF (@checkVersion like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
 
   -- ************ ETL code ends here ****************                
 
@@ -499,23 +521,28 @@ END
 
   -- change object status to @sessionStatus
   EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+
+  IF @@trancount > 0 COMMIT TRANSACTION
+END TRY
+BEGIN CATCH
+  IF @@trancount > 0 ROLLBACK TRANSACTION
+
+  -- change object status to 'Failed'
+  SET @sessionStatus = 'Failed'
+  SET @message = reference.setLogMessage('MasterData', 'Execution failed', 
+              reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
+              @sessionStatus)
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
+  RAISERROR (@message, 16, 1)
+END CATCH
 END 
 ELSE BEGIN -- else skip this step
   SET @message = etl.setLogMessage('MasterData', 'Skip this step', NULL, @sessionStatus)
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 END
-END TRY
-BEGIN CATCH
-    -- change object status to 'Failed'
-    SET @sessionStatus = 'Failed'
-    SET @message = reference.setLogMessage('MasterData', 'Execution failed', 
-                reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
-                @sessionStatus)
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 
-    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
-    RAISERROR (@message, 16, 1)
-END CATCH
 GO
 
 
@@ -540,9 +567,9 @@ SELECT
   {% for key in columns -%}
   [{{key.name}}] = cur.[{{key.name}}],
   {% endfor -%}
-  dwSessionNo, dwPackageName, dwIsDeleted = 0,
+  dwSessionNo, dwPackageName, dwIsDeleted = cast('FALSE' as bit),
   dwStartDate, dwEndDate = CAST(JSON_VALUE(params.value, '$.dwEndDate') as datetime), 
-  dwIsCurrent = 1, dwVersion, dwUpdateDate, dwHash
+  dwIsCurrent = cast('TRUE' as bit), dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}] cur
 CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
 WHERE CAST(JSON_VALUE(params.value, '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(params.value, '$.dwEndDate') as datetime)
@@ -553,7 +580,7 @@ SELECT
   {% endfor -%}
   dwSessionNo, dwPackageName, dwIsDeleted,
   dwStartDate, dwEndDate, 
-  dwIsCurrent = 0, dwVersion, dwUpdateDate, dwHash
+  dwIsCurrent = cast('FALSE' as bit), dwVersion, dwUpdateDate, dwHash
 FROM [{{schemaName}}].[{{tableName}}History] hist
 CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
 WHERE ABS(DATEDIFF(second, getUtcDate(),
