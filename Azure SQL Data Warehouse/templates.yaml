@@ -272,3 +272,25 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
+  - name: "Data Store: SCD2 storage table"
+    <<: *defaults
+    description: Data Store table with history
+    templateFileName: Azure SQL Data Warehouse/ds.scd2.njk
+    metaFolder: "/.code/ds/{destSchema}/.meta/"
+    outputFolder: "/.code/ds/{destSchema}/"
+    outputFileName: "{destSchema}.sp{ObjectName}.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
