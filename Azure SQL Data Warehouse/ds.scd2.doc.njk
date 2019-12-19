@@ -43,7 +43,7 @@ EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
   {{skColumnName}} bigint [pk, increment]
   {%- for key in columns %}
-  {{key.name}} {{key.dataType}}
+  {{key.name}} {% if key.dataType in floatNumbers %} bigint {% else %} {{key.dataType}} {% endif %}
   {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
   {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
   {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
