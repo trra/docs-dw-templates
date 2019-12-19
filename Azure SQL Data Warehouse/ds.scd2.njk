@@ -138,6 +138,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         [{{key.name}}] = 
         {%- if (key.dataType in integers ) %} -1, 
           {%- elif (key.dataType in numbers) %} -1, 
+          {%- elif (key.dataType in floatNumbers) %} -1, 
           {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
           {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
           {%- elif (key.dataType in largeObjects) %} null, 
@@ -168,8 +169,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     CREATE TABLE #stage WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
     SELECT 
       {% for key in srcColumns -%}
-      [{{key.name}}] = {% if key.dataType in floatNumbers %} cast(src.[{{key.name}}] as bigint) {% else %} src.[{{key.name}}] {% endif %},
-      {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
+      [{{key.name}}] = 
+        {%- if key.dataType in floatNumbers %} cast(src.[{{key.name}}] as bigint), -- {{key.dataType}}
+        {%- else -%} src.[{{key.name}}],
+        {%- endif -%}
+      {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
       {% endfor -%}
       dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), 
         concat_ws(@separator, {%- for key in srcColumns -%}
@@ -209,7 +213,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       -- load new records
       INSERT INTO #upsert (
         {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-        {% endif -%}{% endfor %}
+        {% endif -%}{%- endfor %}
         dwRowChangeType, dwHash, dwLastVersion 
         )
       SELECT DISTINCT
@@ -303,6 +307,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     FROM #upsert src
     WHERE dwRowChangeType in ('New', 'Update')
   
+    IF @@trancount>0 AND @sessionNo like '%testSession' WHILE @@trancount > 0 COMMIT TRANSACTION
 
     -- ************ Actual Data UnitTests **************** 
     EXEC reference.printLine '-- Run Actual Data UnitTests'
@@ -357,7 +362,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
 
     -- Raise Errors
-    IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
     IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
     IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
     IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
@@ -443,7 +447,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
 
     -- Raise Errors
-    IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
     IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
     IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
     IF (@checkVersion like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
@@ -457,10 +460,10 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     -- change object status to @sessionStatus
     EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
 
-    IF @@trancount > 0 COMMIT TRANSACTION
+    WHILE @@trancount > 0 COMMIT TRANSACTION
   END TRY
   BEGIN CATCH
-    IF @@trancount > 0 ROLLBACK TRANSACTION
+    WHILE @@trancount > 0 ROLLBACK TRANSACTION
     
     -- change object status to 'Failed'
     SET @sessionStatus = 'Failed'
