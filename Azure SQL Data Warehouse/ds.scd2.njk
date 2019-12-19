@@ -95,13 +95,13 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       EXEC reference.printLine '-- Create table [{{schemaName}}].[{{tableName}}]'
       CREATE TABLE [{{schemaName}}].[{{tableName}}] (
         [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-        {% for key in columns -%}
+        {%- for key in columns %}
         [{{key.name}}] {% if key.dataType in floatNumbers -%} [bigint] {%- else -%} [{{key.dataType}}] {%- endif %}
         {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
         {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
         {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
         {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}},
-        {%- for pk in columnsPK -%}{% if pk.name===key.name %} -- PK {%- endif %}{%- endfor %} 
+        {%- for pk in columnsPK -%}{% if pk.name===key.name %} -- PK {%- endif %}{%- endfor -%} 
         {% endfor %}
         dwSessionNo [varchar](50) NOT NULL,
         dwPackageName [varchar](100) NOT NULL,
