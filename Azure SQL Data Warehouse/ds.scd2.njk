@@ -101,7 +101,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
         {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
         {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}},
-        {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+        {%- for pk in columnsPK -%}{% if pk.name===key.name %} -- PK {%- endif %}{%- endfor -%} 
         {% endfor %}
         dwSessionNo [varchar](50) NOT NULL,
         dwPackageName [varchar](100) NOT NULL,
