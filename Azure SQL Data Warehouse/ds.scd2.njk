@@ -179,6 +179,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
             {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
             {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
             {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
+            {%- elif key.dataType in floatNumbers %} convert(bigint, src.[{{key.name}}])
             {%- else %} src.[{{key.name}}]
             {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
             {%- endif -%}
@@ -329,6 +330,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
                 {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
                 {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
                 {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
+                {%- elif key.dataType in floatNumbers %} convert(bigint, src.[{{key.name}}])
                 {%- else %} sink.[{{key.name}}]
                 {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
                 {%- endif -%}
@@ -381,6 +383,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {%- if key.dataType in dates %} convert(nvarchar(100), [{{key.name}}], 23)
         {%- elif key.dataType in times %} convert(nvarchar(100), [{{key.name}}], 114)
         {%- elif key.dataType in datetimes %} convert(nvarchar(100), [{{key.name}}], 121)
+        {%- elif key.dataType in floatNumbers %} convert(bigint, src.[{{key.name}}])
         {%- else %} [{{key.name}}]
         {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
         {%- endif -%}
