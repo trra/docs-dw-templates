@@ -60,7 +60,7 @@ DECLARE @nowNZ datetime = reference.getLocalDate(@now, 'NZ')
 SET @dwHistoryDate = isNull(@dwHistoryDate, @now)
 
 -- read datamart settings
-DECLARE @settings nvarchar(max) = reference.getMartParams(@domainCode, @now, @sessionNo, @objectCode)
+DECLARE @settings nvarchar(max) = reference.getDsParams(@domainCode, @now, @sessionNo, @objectCode)
 DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(@settings, '$.dwInitialDate') as datetime)
 DECLARE @dwEndDate datetime = CAST(JSON_VALUE(@settings, '$.dwEndDate') as datetime)
 DECLARE @dwCurrentDate datetime = CAST(JSON_VALUE(@settings, '$.dwCurrentDate') as datetime)
