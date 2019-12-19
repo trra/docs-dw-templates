@@ -95,8 +95,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       EXEC reference.printLine '-- Create table [{{schemaName}}].[{{tableName}}]'
       CREATE TABLE [{{schemaName}}].[{{tableName}}] (
         [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-        {%- for key in columns %}
-        
+        {% for key in columns -%}
         [{{key.name}}] {% if key.dataType in floatNumbers %} [bigint] {% else %} [{{key.dataType}}] {% endif %}
         {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
         {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
@@ -173,7 +172,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {%- if key.dataType in floatNumbers %} cast(src.[{{key.name}}] as bigint), -- {{key.dataType}}
         {%- else -%} src.[{{key.name}}],
         {%- endif -%}
-      {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
+      {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
       {% endfor -%}
       dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), 
         concat_ws(@separator, {%- for key in srcColumns -%}
@@ -213,7 +212,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       -- load new records
       INSERT INTO #upsert (
         {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-        {% endif -%}{%- endfor %}
+        {% endif -%}{%- endfor -%}
         dwRowChangeType, dwHash, dwLastVersion 
         )
       SELECT DISTINCT
