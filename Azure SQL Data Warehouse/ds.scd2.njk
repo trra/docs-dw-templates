@@ -27,14 +27,15 @@ GO
 CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
     @sessionNo varchar(50),
     @packageName varchar(100),
-    @dwHistoryDate datetime
+    @dwHistoryDate datetime,
+    @loadType varchar(10)
 AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
 -- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into datamart SCD2 DataStore table [{{schemaName}}].[{{tableName}}]
 --
 -- Execution sample:
--- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 
+-- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
 -- 
 -- Author: {{ p.settings.author }}
 -- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
@@ -65,7 +66,7 @@ DECLARE @dwEndDate datetime = CAST(JSON_VALUE(@settings, '$.dwEndDate') as datet
 DECLARE @dwCurrentDate datetime = CAST(JSON_VALUE(@settings, '$.dwCurrentDate') as datetime)
 DECLARE @separator nvarchar(2) = JSON_VALUE(@settings, '$.separator')
 DECLARE @version nvarchar(10) = JSON_VALUE(@settings, '$.version')
-DECLARE @loadType nvarchar(10) = JSON_VALUE(@settings, '$.loadType')
+SET @loadType nvarchar(10) = isNull(@loadType, JSON_VALUE(@settings, '$.loadType'))
 PRINT @settings
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @settings
 
