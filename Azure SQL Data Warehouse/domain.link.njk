@@ -388,12 +388,12 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     Expect as (SELECT expectCount = count(*) FROM #stage),
     Actual as (
       SELECT 
-        actualCount = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),
-        actualCountKey = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 1 ELSE 0 END),
+        actualCount = isNull(SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),0),
+        actualCountKey = isNull(SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 1 ELSE 0 END),0),
         actualCountPK = COUNT(DISTINCT CASE
             WHEN sink.[{{skColumnName}}] = -1 THEN NULL
             ELSE concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor %}'' ) END),
-        actualNullPK = SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ ' OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END)
+        actualNullPK = isNull(SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ ' OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END),0)
       FROM [{{schemaName}}].[{{tableName}}] sink 
       LEFT JOIN #stage src 
         ON {% for pk in columnsPK %}sink.[{{pk.name}}] = src.[{{pk.name}}] 
