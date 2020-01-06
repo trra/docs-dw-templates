@@ -250,10 +250,10 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
-  - name: "Data Mart: Dimension UCD (external Key)"
+  - name: "Data Mart: Dimension NCD (external Key)"
     <<: *defaults
-    description: Data Mart static dimension table (external Key)
-    templateFileName: Azure SQL Data Warehouse/dm.dim.ucd.key.njk
+    description: Data Mart static never-changing dimension table (external Key)
+    templateFileName: Azure SQL Data Warehouse/dm.dim.ncd.key.njk
     metaFolder: "/.code/dm/dimension/.meta/"
     outputFolder: "/.code/dm/dimension/"
     outputFileName: "{destSchema}.sp{ObjectName}.sql"
@@ -271,7 +271,7 @@ templates:
       - Destination Schema
       - Destination Table
       - Select Destination Columns
-      - Procedure Name      
+      - Procedure Name
   - name: "Data Mart: Fact"
     <<: *defaults
     description: Data Mart fact table
