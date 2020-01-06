@@ -250,6 +250,28 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
+  - name: "Data Mart: Dimension UCD (external Key)"
+    <<: *defaults
+    description: Data Mart static dimension table (external Key)
+    templateFileName: Azure SQL Data Warehouse/dm.dim.ucd.key.njk
+    metaFolder: "/.code/dm/dimension/.meta/"
+    outputFolder: "/.code/dm/dimension/"
+    outputFileName: "{destSchema}.sp{ObjectName}.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name      
   - name: "Data Mart: Fact"
     <<: *defaults
     description: Data Mart fact table
