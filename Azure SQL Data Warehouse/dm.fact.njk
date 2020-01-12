@@ -263,7 +263,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           actualNullPK = isNull(SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END),0)
         FROM [{{schemaName}}].[{{tableName}}] sink 
         LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
-        WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
+        WHERE ((src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1))
           AND sink.dwIsDeleted = 'FALSE'
         )
   SELECT 
