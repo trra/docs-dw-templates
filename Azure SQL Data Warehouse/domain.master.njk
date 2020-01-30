@@ -31,7 +31,7 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
 AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
--- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain master table [{{schemaName}}].[{{tableName}}]
+-- Fetch {% if query %}SQL query{%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain master table [{{schemaName}}].[{{tableName}}]
 --
 -- Execution sample:
 -- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 
@@ -511,17 +511,18 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   DECLARE @checkCurrentFlag varchar(250)
   DECLARE @checkStartDate varchar(250)
   DECLARE @checkVersion varchar(250)
+  DECLARE @checkVersionSeq varchar(250)
   DECLARE @checkDeletedRows varchar(250)
   DECLARE @checkCardinality varchar(250)
 
   ;WITH 
   S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
-    dwStartDate, dwEndDate, dwIsCurrent = 0,
+    dwStartDate, dwEndDate, dwIsCurrent = 0, dwVersion,
     cntVersion = count(1) over (partition by {% for key in columnsPK -%}
         [{{key.name}}], {% endfor %}dwVersion)
     FROM [{{schemaName}}].[{{tableName}}History] UNION
     SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
-    dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1,
+    dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1, dwVersion,
     cntVersion = count(1) over (partition by {% for key in columnsPK -%}
       [{{key.name}}], {% endfor %}dwVersion)
     FROM [{{schemaName}}].[{{tableName}}]),
@@ -534,7 +535,8 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
         cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
         chk_start_date = CASE WHEN ISNULL(dateAdd(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END,
-        chk_version = CASE WHEN ISNULL(curS.cntVersion, 1) != 1 THEN 1 ELSE 0 END
+        chk_version = CASE WHEN ISNULL(curS.cntVersion, 1) != 1 THEN 1 ELSE 0 END,
+        chk_versionSeq = CASE WHEN ISNULL(prevS.dwVersion, 0) + 1 != ISNULL(curS.dwVersion, 1) THEN 1 ELSE 0 END
     FROM S curS 
     LEFT JOIN S prevS 
         ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
@@ -560,6 +562,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
       @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
       @checkVersion = test.assertEqualsInt('checkVersion (unique)', 0, sum(chk_version)),
+      @checkVersionSeq = test.assertEqualsInt('checkVersionSeq (unique)', 0, sum(chk_versionSeq)),
       @checkDeletedRows = test.assertEqualsInt('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
       @checkCardinality = test.assertEqualsInt('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
   FROM TESTS CROSS JOIN Cardinality
@@ -568,10 +571,12 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   PRINT @checkCurrentFlag
   PRINT @checkStartDate
   PRINT @checkVersion
+  PRINT @checkVersionSeq
   
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersionSeq
   
   -- Warnings
   SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
@@ -586,6 +591,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
   IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
   IF (@checkVersion like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
+  IF (@checkVersionSeq like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
 
   -- ************ ETL code ends here ****************                
 
