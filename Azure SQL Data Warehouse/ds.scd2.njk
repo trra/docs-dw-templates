@@ -54,6 +54,8 @@ DECLARE @domainCode varchar(10) = '{{spSchema}}' -- define domain name in LOWER 
 DECLARE @systemCode varchar(10) = 'ALL' -- define what system source/ALL used in this sproc
 DECLARE @objectCode varchar(250) = '{{schemaName}}.{{tableName}}' -- define destination object code 
 DECLARE @procName varchar(250)   = '{{schemaName}}.sp{{tableName}}' -- current proc name - OBJECT_NAME(@@PROCID) is not yet supported
+DECLARE @tableName varchar(250) = '{{tableName}}' 
+DECLARE @stepName varchar(250) = 'DWODS'
 
 DECLARE @now datetime = getUtcDate()
 DECLARE @nowNZ datetime = reference.getLocalDate(@now, 'NZ')
@@ -66,30 +68,26 @@ DECLARE @dwEndDate datetime = CAST(JSON_VALUE(@settings, '$.dwEndDate') as datet
 DECLARE @dwCurrentDate datetime = CAST(JSON_VALUE(@settings, '$.dwCurrentDate') as datetime)
 DECLARE @separator nvarchar(2) = JSON_VALUE(@settings, '$.separator')
 DECLARE @version nvarchar(10) = JSON_VALUE(@settings, '$.version')
-SET @loadType nvarchar(10) = isNull(@loadType, JSON_VALUE(@settings, '$.loadType'))
+SET @loadType = isNull(@loadType, JSON_VALUE(@settings, '$.loadType'))
 PRINT @settings
-EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @settings
+EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @settings
 
 PRINT replicate('-', 20) + ' EXECUTE [' + @procName + '] ' + replicate('-', 20)
-EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Start Execution'
-
--- add all manual dependencies here
-DECLARE @dependencyList varchar(1000) = NULL 
-{% if srcTables %}
-{%- for srcTable in srcTables -%}
--- EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcTable.schemaName}}.{{srcTable.tableName}}', @destObjectCode = @objectCode
-{% endfor -%}
-{%- else -%}
--- EXEC [etl].[addDependency] @sessionNo, @packageName, @srcObjectCode = '{{srcSchemaName}}.{{srcTableName}}', @destObjectCode = @objectCode
-{%- endif %}
--- always check for session status AFTER adding new dependencies
-EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionStatus OUT
+EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Start Execution'
+SET @sessionStatus = isNull((
+  SELECT nullIf(StatusDWODS,'') FROM meta.adfSession 
+  WHERE sessionNo = @sessionNo and pipelineName = @packageName and tableName = @tableName),
+  'Ready')
 
 IF @sessionStatus in ('Ready', 'Failed') BEGIN 
   EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
   BEGIN TRY    
     -- ************ ETL code starts here ****************
     -- perform action
+    SET @sessionStatus = 'Running'
+    SET @message = replace('{"message":"ODS load started", "status":"{0}"}','{0}', @sessionStatus)
+    EXEC [meta].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @message, 1
+    -- EXEC [META].[addSessionLog]  @sessionNo,  @pipelineName, @tableName, @stepName, @message, 1;
 
     IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
     BEGIN
@@ -114,7 +112,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         dwUpdateDate [datetime] NOT NULL,
         dwHash [varchar](40) NOT NULL            
       ) WITH ( DISTRIBUTION = REPLICATE, CLUSTERED INDEX ({{skColumnName}}) )
-      -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
     END
 
     IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0 
@@ -357,10 +354,10 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     PRINT @checkQuantityPK
     PRINT @checkQuantityLimit
     
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityKey
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkTotalQuantity
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkQuantityKey
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkQuantityPK
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkQuantityLimit
 
     -- Raise Errors
     IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
@@ -436,17 +433,17 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     PRINT @checkStartDate
     PRINT @checkVersion
     
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkCurrentFlag
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkStartDate
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkVersion
     
     -- Warnings
     SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
     SET @checkCardinality = REPLACE( @checkCardinality, 'TEST FAILED', 'WARNING!')
     PRINT @checkDeletedRows
     PRINT @checkCardinality
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkDeletedRows
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkDeletedRows
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkCardinality
 
     -- Raise Errors
     IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
@@ -457,7 +454,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     SET @sessionStatus = 'Succeeded'
     SET @message = etl.setLogMessage('DataStore', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    EXEC [meta].[addSessionLog] @sessionNo, @packageName, @tableName, 'DWODS', @message, 1
 
     -- change object status to @sessionStatus
     EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
@@ -472,7 +469,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     SET @message = reference.setLogMessage('DataStore', 'Execution failed', 
       reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
       @sessionStatus)
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    EXEC [meta].[addSessionLog] @sessionNo, @packageName, @tableName, 'DWODS', @message, 1
 
     EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
     RAISERROR (@message, 16, 1)
@@ -480,5 +477,5 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 END 
 ELSE BEGIN -- else skip this step
   SET @message = etl.setLogMessage('DataStore', 'Skip this step', NULL, @sessionStatus)
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @message
 END
