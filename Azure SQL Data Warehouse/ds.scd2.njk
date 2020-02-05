@@ -80,15 +80,13 @@ SET @sessionStatus = isNull((
   'Ready')
 
 IF @sessionStatus in ('Ready', 'Failed') BEGIN 
-  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
+  SET @sessionStatus = 'Running'
+  SET @message = replace('{"message":"ODS load started", "status":"{0}"}','{0}', @sessionStatus)
+  EXEC [meta].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @message, 1
+
   BEGIN TRY    
     -- ************ ETL code starts here ****************
     -- perform action
-    SET @sessionStatus = 'Running'
-    SET @message = replace('{"message":"ODS load started", "status":"{0}"}','{0}', @sessionStatus)
-    EXEC [meta].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @message, 1
-    -- EXEC [META].[addSessionLog]  @sessionNo,  @pipelineName, @tableName, @stepName, @message, 1;
-
     IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
     BEGIN
       EXEC reference.printLine '-- Create table [{{schemaName}}].[{{tableName}}]'
