@@ -454,9 +454,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     SET @message = etl.setLogMessage('DataStore', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
     EXEC [meta].[addSessionLog] @sessionNo, @packageName, @tableName, 'DWODS', @message, 1
 
-    -- change object status to @sessionStatus
-    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
-
     WHILE @@trancount > 0 COMMIT TRANSACTION
   END TRY
   BEGIN CATCH
@@ -469,7 +466,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       @sessionStatus)
     EXEC [meta].[addSessionLog] @sessionNo, @packageName, @tableName, 'DWODS', @message, 1
 
-    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
     RAISERROR (@message, 16, 1)
   END CATCH
 END 
