@@ -112,44 +112,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       ) WITH ( DISTRIBUTION = REPLICATE, CLUSTERED INDEX ({{skColumnName}}) )
     END
 
-    IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 AND [{{skColumnName}}] != -1) > 0 
-      DELETE [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1 
-
-    IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{columnsPK[0].name}}] = -1) = 0
-    BEGIN 
-      EXEC reference.printLine '-- Insert default -1 "Unknown" row'
-      SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON
-      INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-        [{{skColumnName}}], 
-        {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.last %}
-        {% endif -%}{%- endfor %}
-        dwSessionNo, dwPackageName, dwIsDeleted, dwStartDate, dwEndDate, 
-        dwIsCurrent, dwVersion, dwUpdateDate, dwHash
-      )
-      SELECT 
-        [{{skColumnName}}] = -1,
-        {%- for key in columns %} 
-        [{{key.name}}] = 
-        {%- if (key.dataType in integers ) %} -1, 
-          {%- elif (key.dataType in numbers) %} -1, 
-          {%- elif (key.dataType in floatNumbers) %} -1, 
-          {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
-          {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
-          {%- elif (key.dataType in largeObjects) %} null, 
-          {%- else %} null, {%- endif %}
-        {%- endfor -%}
-        dwSessionNo = @sessionNo,
-        dwPackageName = @packageName,
-        dwIsDeleted = 'FALSE',
-        dwStartDate = @dwInitialDate,
-        dwEndDate = @dwEndDate,
-        dwIsCurrent = 'TRUE',
-        dwVersion = 1,
-        dwUpdateDate = @now,
-        dwHash = ''
-      SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
-    END 
-
     {% if query %}
     EXEC reference.printLine '-- Create #src'
     IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
@@ -180,7 +142,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
             {%- endif -%}
             {%- endfor -%}, ''))), 2)  
     FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
-    WHERE src.[{{columnsPK[0].name}}] != -1
 
     EXEC reference.printLine '-- Create #upsert'
     -- Create temp table to update existing and add new records
@@ -224,7 +185,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           {%- if not loop.last %} AND {% endif -%}{%- endfor %}
         )
         AND dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
-        AND sink.[{{skColumnName}}] != -1 
     END          
   
     -- Restore dataset on selected previous date
@@ -253,7 +213,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
       DELETE FROM [{{schemaName}}].[{{tableName}}] 
       WHERE dwStartDate >= @dwHistoryDate
-        AND [{{skColumnName}}] != -1
 
       UPDATE [{{schemaName}}].[{{tableName}}] 
       SET 
@@ -279,7 +238,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     -- load new records
     INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
       {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-      {% endif -%}{% endfor %} 
+      {% endif -%}{%- endfor %} 
       dwSessionNo, dwPackageName, dwIsDeleted, dwStartDate, dwEndDate, 
       dwIsCurrent, dwVersion, dwUpdateDate, dwHash
       )
@@ -317,8 +276,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       Expect as (SELECT expectCount = count(*) FROM #stage),
       Actual as (
         SELECT 
-          actualCount = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),
-          actualCountKey = SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 1 ELSE 0 END),
+          actualCount = COUNT(1),
           actualCountPK = COUNT(DISTINCT CASE
               WHEN sink.[{{skColumnName}}] = -1 THEN NULL
               ELSE concat_ws(@separator, {%- for key in columnsPK -%}
@@ -333,12 +291,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
         FROM [{{schemaName}}].[{{tableName}}] sink 
         LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
-        WHERE ((src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1))
+        WHERE src.[{{columnsPK[0].name}}] IS NOT NULL
           AND sink.dwIsCurrent = 'TRUE'
         )
     SELECT 
       @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
-      @checkQuantityKey = test.assertEqualsInt('checkQuantityKey (destination dimKey = 1)', 1, actualCountKey),
       @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
       @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
           CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
@@ -348,12 +305,10 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     -- Info
     PRINT @checkTotalQuantity
-    PRINT @checkQuantityKey
     PRINT @checkQuantityPK
     PRINT @checkQuantityLimit
     
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkTotalQuantity
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkQuantityKey
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkQuantityPK
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, @checkQuantityLimit
 
@@ -389,7 +344,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       FROM [{{schemaName}}].[{{tableName}}]),
     DatePeriod as (
       SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
-      FROM s WHERE keyId != -1
+      FROM s
       ),
     TESTS AS (
       SELECT curS.id, 
