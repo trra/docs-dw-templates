@@ -273,6 +273,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Start UnitTests'
     DECLARE @expectCountMin bigInt, @expectCountMax bigInt
     EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
+    SET @expectCountMin = CASE WHEN @loadType = 'Delta' THEN 0 ELSE @expectCountMin END
     EXEC reference.printLine '-- Run Actual Data UnitTests'
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Run Actual Data UnitTests'
 
@@ -291,7 +292,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
           {%- endif -%}
           {%- endfor -%}, '') END),   
-      @actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+      @actualNullPK = isNull(SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END ), 0)
     FROM [{{schemaName}}].[{{tableName}}] sink 
     JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
     WHERE sink.dwIsCurrent = 'TRUE'
