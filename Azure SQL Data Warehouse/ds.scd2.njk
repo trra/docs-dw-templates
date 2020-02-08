@@ -63,6 +63,12 @@ SET @dwHistoryDate = isNull(@dwHistoryDate, @now)
 
 -- read datamart settings
 DECLARE @settings nvarchar(max) = reference.getDsParams(@domainCode, @now, @sessionNo, @objectCode)
+SET @loadType = CASE
+  WHEN OBJECT_ID('[dsPoC].[F0116]', 'U') IS NULL THEN 'Initial'
+  ELSE isNull(@loadType, JSON_VALUE(@settings, '$.loadType'))
+  END
+SET @settings = JSON_MODIFY(@settings, '$.loadType', @loadType)
+
 DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(@settings, '$.dwInitialDate') as datetime)
 DECLARE @dwEndDate datetime = CAST(JSON_VALUE(@settings, '$.dwEndDate') as datetime)
 DECLARE @dwCurrentDate datetime = CAST(JSON_VALUE(@settings, '$.dwCurrentDate') as datetime)
@@ -208,7 +214,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       FROM [{{schemaName}}].[{{tableName}}] sink
       WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
       
-      IF @@trancount = 0 BEGIN TRANSACTION
+      IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
       SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
       EXEC reference.printLine @message
 
@@ -224,7 +230,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         AND [{{schemaName}}].[{{tableName}}].dwEndDate > @dwHistoryDate
     END
 
-    IF @@trancount = 0 BEGIN TRANSACTION
+    -- IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
     EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
     UPDATE [{{schemaName}}].[{{tableName}}] 
     SET 
@@ -266,45 +272,37 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     -- ************ Actual Data UnitTests **************** 
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Start UnitTests'
-    DECLARE @checkTotalQuantity varchar(250)
-    DECLARE @checkQuantityKey varchar(250)
-    DECLARE @checkQuantityPK varchar(250)
-    DECLARE @checkQuantityLimit varchar(250)
-    DECLARE @checkNullPK varchar(250)
     DECLARE @expectCountMin bigInt, @expectCountMax bigInt
     EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
     EXEC reference.printLine '-- Run Actual Data UnitTests'
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Run Actual Unit Tests'
-    ;WITH 
-      Expect as (SELECT expectCount = count(*) FROM #stage),
-      Actual as (
-        SELECT 
-          actualCount = COUNT(1),
-          actualCountPK = COUNT(DISTINCT CASE
-              WHEN sink.[{{skColumnName}}] = -1 THEN NULL
-              ELSE concat_ws(@separator, {%- for key in columnsPK -%}
-                {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
-                {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
-                {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
-                {%- elif key.dataType in floatNumbers %} convert(bigint, sink.[{{key.name}}])
-                {%- else %} sink.[{{key.name}}]
-                {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
-                {%- endif -%}
-                {%- endfor -%}, '') END),   
-          actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
-        FROM [{{schemaName}}].[{{tableName}}] sink 
-        LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
-        WHERE src.[{{columnsPK[0].name}}] IS NOT NULL
-          AND sink.dwIsCurrent = 'TRUE'
-        )
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Run Actual Data UnitTests'
+
+    DECLARE @expectCount bigInt = (SELECT count(1) FROM #stage)
+    DECLARE @actualCount bigInt, @actualCountPK bigInt, @actualNullPK bigInt
     SELECT 
-      @checkTotalQuantity = test.assertEquals('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
-      @checkQuantityPK = test.assertEquals('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
-      @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
-          CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
-      @checkNullPK = test.assertEquals('checkNullPK (PK has NULL values)', 0, actualNullPK),
-      @rowsRead = expectCount, @rowsWritten = actualCount
-    FROM Actual CROSS JOIN Expect
+      @actualCount = COUNT(1),
+      @actualCountPK = COUNT(DISTINCT CASE
+        WHEN sink.[{{skColumnName}}] = -1 THEN NULL
+        ELSE concat_ws(@separator, {%- for key in columnsPK -%}
+          {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
+          {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
+          {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
+          {%- elif key.dataType in floatNumbers %} convert(bigint, sink.[{{key.name}}])
+          {%- else %} sink.[{{key.name}}]
+          {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
+          {%- endif -%}
+          {%- endfor -%}, '') END),   
+      @actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
+    FROM [{{schemaName}}].[{{tableName}}] sink 
+    WHERE sink.dwIsCurrent = 'TRUE'
+
+    DECLARE @checkTotalQuantity varchar(250) = test.assertEquals('checkTotalQuantity (source row quantity = destination)', @expectCount, @actualCount)
+    DECLARE @checkQuantityPK varchar(250) = test.assertEquals('checkQuantityPK (source row quantity = destination PK)', @expectCount, @actualCountPK)
+    DECLARE @checkQuantityLimit varchar(250) = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
+          CASE WHEN @actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END)
+    DECLARE @checkNullPK varchar(250) = test.assertEquals('checkNullPK (PK has NULL values)', 0, @actualNullPK)
+    SET @rowsRead = @expectCount
+    SET @rowsWritten = @actualCount
 
     -- Info
     PRINT @checkTotalQuantity
