@@ -293,6 +293,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           {%- endfor -%}, '') END),   
       @actualNullPK = SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END )
     FROM [{{schemaName}}].[{{tableName}}] sink 
+    JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
     WHERE sink.dwIsCurrent = 'TRUE'
 
     DECLARE @checkTotalQuantity varchar(250) = test.assertEquals('checkTotalQuantity (source row quantity = destination)', @expectCount, @actualCount)
