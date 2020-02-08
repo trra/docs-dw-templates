@@ -112,12 +112,13 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       ) WITH ( DISTRIBUTION = REPLICATE, CLUSTERED INDEX ({{skColumnName}}) )
     END
 
-    {% if query %}
+    {% if query -%}
     EXEC reference.printLine '-- Create #src'
     IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
     CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
     {{query | safe | indent(8) }}
-    {% endif %}
+    {%- endif %}
+    {% if not query -%}UPDATE STATISTICS [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %}
 
     EXEC reference.printLine '-- Create #stage'
     -- Create temp source table with foreign key(s)
@@ -264,7 +265,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     IF @@trancount>0 AND @sessionNo like '%testSession' WHILE @@trancount > 0 COMMIT TRANSACTION
 
     -- ************ Actual Data UnitTests **************** 
-    EXEC reference.printLine '-- Run Actual Data UnitTests'
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Start UnitTests'
     DECLARE @checkTotalQuantity varchar(250)
     DECLARE @checkQuantityKey varchar(250)
     DECLARE @checkQuantityPK varchar(250)
@@ -272,6 +273,8 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     DECLARE @checkNullPK varchar(250)
     DECLARE @expectCountMin bigInt, @expectCountMax bigInt
     EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
+    EXEC reference.printLine '-- Run Actual Data UnitTests'
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Run Actual Unit Tests'
     ;WITH 
       Expect as (SELECT expectCount = count(*) FROM #stage),
       Actual as (
@@ -295,11 +298,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           AND sink.dwIsCurrent = 'TRUE'
         )
     SELECT 
-      @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
-      @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
+      @checkTotalQuantity = test.assertEquals('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
+      @checkQuantityPK = test.assertEquals('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
       @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
           CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
-      @checkNullPK = test.assertEqualsInt('checkNullPK (PK has NULL values)', 0, actualNullPK),
+      @checkNullPK = test.assertEquals('checkNullPK (PK has NULL values)', 0, actualNullPK),
       @rowsRead = expectCount, @rowsWritten = actualCount
     FROM Actual CROSS JOIN Expect
 
@@ -320,6 +323,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     
     
     -- ************ History Data UnitTests ****************
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Run History Unit Tests'
     EXEC reference.printLine '-- Run History Data UnitTests'        
     DECLARE @checkCurrentFlag varchar(250)
     DECLARE @checkStartDate varchar(250)
@@ -374,11 +378,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     -- DEBUG: select all failed records
     -- SELECT * FROM TESTS WHERE chk_currentFlag != 0 OR cnt_deleted_rows != 0 OR chk_start_date != 0     
     SELECT 
-      @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
-      @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
-      @checkVersion = test.assertEqualsInt('checkVersion (unique)', 0, sum(chk_version)),
-      @checkDeletedRows = test.assertEqualsInt('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
-      @checkCardinality = test.assertEqualsInt('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
+      @checkCurrentFlag = test.assertEquals('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
+      @checkStartDate = test.assertEquals('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
+      @checkVersion = test.assertEquals('checkVersion (unique)', 0, sum(chk_version)),
+      @checkDeletedRows = test.assertEquals('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
+      @checkCardinality = test.assertEquals('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
     FROM TESTS CROSS JOIN Cardinality
 
     -- Info
