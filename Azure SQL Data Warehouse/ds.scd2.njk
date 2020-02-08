@@ -213,7 +213,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       FROM [{{schemaName}}].[{{tableName}}] sink
       WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
       
-      IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
+      -- IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
       SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
       EXEC reference.printLine @message
 
