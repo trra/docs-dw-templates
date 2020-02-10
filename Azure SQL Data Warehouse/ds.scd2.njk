@@ -114,7 +114,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         dwVersion [int] NOT NULL,
         dwUpdateDate [datetime] NOT NULL,
         dwHash [varchar](40) NOT NULL            
-      ) WITH ( DISTRIBUTION = REPLICATE, CLUSTERED INDEX ({{skColumnName}}) )
+      ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP)
     END
 
     {% if query -%}
@@ -213,7 +213,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       FROM [{{schemaName}}].[{{tableName}}] sink
       WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
       
-      -- IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
+      IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
       SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
       EXEC reference.printLine @message
 
@@ -229,7 +229,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         AND [{{schemaName}}].[{{tableName}}].dwEndDate > @dwHistoryDate
     END
 
-    -- IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
+    IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
     EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
     UPDATE [{{schemaName}}].[{{tableName}}] 
     SET 
