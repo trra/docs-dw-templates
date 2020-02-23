@@ -48,7 +48,7 @@ DECLARE @rowsRead INT, @rowsWritten INT
 DECLARE @message varchar(1000)
 DECLARE @sessionStatus varchar(50)
 
-DECLARE @domainCode varchar(10) = '{{spSchema}}' -- define domain name in LOWER CASE
+DECLARE @domainCode varchar(50) = '{{spSchema}}' -- define domain name in LOWER CASE
 DECLARE @systemCode varchar(10) = 'ALL' -- define what system source/ALL used in this sproc
 DECLARE @objectCode varchar(250) = '{{schemaName}}.{{tableName}}' -- define destination object code 
 DECLARE @procName varchar(250)   = '{{schemaName}}.sp{{tableName}}' -- current proc name - OBJECT_NAME(@@PROCID) is not yet supported
