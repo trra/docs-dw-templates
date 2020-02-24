@@ -34,7 +34,7 @@ AS
 -- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain transactional table [{{schemaName}}].[{{tableName}}]
 --
 -- Execution sample:
--- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL 
+-- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
 -- 
 -- Author: {{ p.settings.author }}
 -- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
