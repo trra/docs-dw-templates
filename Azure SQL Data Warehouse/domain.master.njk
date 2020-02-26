@@ -465,6 +465,8 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   DECLARE @checkNullPK varchar(250)
   DECLARE @expectCountMin bigInt, @expectCountMax bigInt
   EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
+  SET @expectCountMin = CASE WHEN @loadType = 'Delta' THEN 0 ELSE @expectCountMin END
+  SET @expectCountMax = CASE WHEN @loadType in ('Full', 'Initial') THEN 100000000 ELSE @expectCountMax END
   ;WITH 
       Expect as (SELECT expectCount = count(*) FROM #stage),
       Actual as (
