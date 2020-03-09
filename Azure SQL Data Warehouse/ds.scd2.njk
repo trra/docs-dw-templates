@@ -64,7 +64,7 @@ SET @dwHistoryDate = isNull(@dwHistoryDate, @now)
 -- read datamart settings
 DECLARE @settings nvarchar(max) = reference.getDsParams(@domainCode, @now, @sessionNo, @objectCode)
 SET @loadType = CASE
-  WHEN OBJECT_ID('[dsPoC].[F0116]', 'U') IS NULL THEN 'Initial'
+  WHEN OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL THEN 'Initial'
   ELSE isNull(@loadType, JSON_VALUE(@settings, '$.loadType'))
   END
 SET @settings = JSON_MODIFY(@settings, '$.loadType', @loadType)

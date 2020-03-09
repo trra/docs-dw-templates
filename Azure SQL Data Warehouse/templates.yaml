@@ -142,11 +142,33 @@ templates:
       - Procedure Name
   - name: "Data Domain: Reference Data"
     <<: *defaults
-    description: Reference table with history
+    description: Reference table
     templateFileName: Azure SQL Data Warehouse/domain.reference.njk
     metaFolder: "/.code/domain/ref/.meta/"
     outputFolder: "/.code/domain/ref/"
     outputFileName: "{destSchema}.sp{destTable}.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
+  - name: "Data Domain: Reference Data + history"
+    <<: *defaults
+    description: Reference table with history
+    templateFileName: Azure SQL Data Warehouse/domain.reference.H.njk
+    metaFolder: "/.code/domain/ref/.meta/"
+    outputFolder: "/.code/domain/ref/"
+    outputFileName: "{destSchema}.sp{destTable}.H.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"

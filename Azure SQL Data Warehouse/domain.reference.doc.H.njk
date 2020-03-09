@@ -35,7 +35,7 @@ Domain Reference Table
 ### Execution sample
 
 ```sql
-EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
+EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 ```
 
 ### Table structure
@@ -54,10 +54,7 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #3498db] {
   //// -- internal DW columns
   dwSessionNo varchar
   dwPackageName varchar
-  dwIsDeleted bit
-  dwIsCurrent bit
   dwStartDate datetime
-  dwEndDate datetime
   dwVersion int
   dwUpdateDate datetime
   dwHash varchar
