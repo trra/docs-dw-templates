@@ -21,6 +21,9 @@
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set skColumnName = p.meta.object.name+'SK' -%}
 {%- set mkColumnName = p.meta.object.name+'MK' -%}
+IF SCHEMA_ID('{{spSchema}}') IS NULL EXEC ('CREATE SCHEMA {{spSchema}}')
+GO
+
 IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL DROP PROCEDURE [{{spSchema}}].[{{spName}}];
 GO
 
@@ -94,7 +97,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
   BEGIN TRY
     -- ************ ETL code starts here ****************
-    -- perform action
 
     IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
     BEGIN
@@ -332,7 +334,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         dwUpdateDate = sink.dwUpdateDate,
         dwHash = sink.dwHash
       FROM [{{schemaName}}].[{{tableName}}] sink
-      WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
+      WHERE dateAdd(s, -1, @dwHistoryDate) between sink.dwStartDate and sink.dwEndDate 
 
       IF @@trancount = 0 BEGIN TRANSACTION
       SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
@@ -363,15 +365,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     END
 
     IF @@trancount = 0 BEGIN TRANSACTION
-    EXEC reference.printLine '-- Keep [{{schemaName}}].[{{tableName}}] updated and deleted rows'
-    UPDATE [{{schemaName}}].[{{tableName}}] 
-    SET 
-      dwIsCurrent = 'FALSE',
-      dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime)),
-    FROM #upsert src 
-    WHERE [{{schemaName}}].[{{tableName}}].[{{mkColumnName}}] = src.[{{mkColumnName}}]
-      AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 'TRUE'
-
     EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}]'
     -- load new records
     INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
@@ -380,13 +373,13 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       dwSessionNo, dwPackageName, dwIsDeleted, dwIsCurrent,
       dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
     SELECT
-      [{{mkColumnName}}] = cur.[{{mkColumnName}}],
+      [{{mkColumnName}}] = src.[{{mkColumnName}}],
       {% for key in columns -%}
-      [{{key.name}}] = cur.[{{key.name}}],
+      [{{key.name}}] = src.[{{key.name}}],
       {% endfor -%}
-      dwSessionNo = cur.dwSessionNo,
-      dwPackageName = cur.dwPackageName,
-      dwIsDeleted = CASE WHEN dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
+      dwSessionNo = @sessionNo,
+      dwPackageName = @packageName,
+      dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
       dwIsCurrent = 'TRUE',
       dwStartDate = CASE 
         -- #note: dwStartDate can base on src.<startDate>
@@ -395,11 +388,19 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       dwEndDate = @dwEndDate,
       dwVersion = isNull(src.dwLastVersion, 0) + 1,
       dwUpdateDate = @now,
-      dwHash = cur.dwHash
-    FROM [{{schemaName}}].[{{tableName}}] cur 
-    JOIN #upsert src ON cur.[{{mkColumnName}}] = src.[{{mkColumnName}}]
-    WHERE dwRowChangeType in ('New', 'Update')
-      AND cur.dwIsCurrent = 'TRUE'
+      dwHash = src.dwHash
+    FROM #upsert src
+    WHERE src.dwRowChangeType in ('New', 'Update')
+
+    EXEC reference.printLine '-- Modify [{{schemaName}}].[{{tableName}}] updated and deleted rows'
+    UPDATE [{{schemaName}}].[{{tableName}}] 
+    SET 
+      dwIsCurrent = 'FALSE',
+      dwEndDate = dateAdd(s, -1, @dwHistoryDate),
+    FROM #upsert src 
+    WHERE [{{schemaName}}].[{{tableName}}].[{{mkColumnName}}] = src.[{{mkColumnName}}]
+      AND src.dwRowChangeType in ('Update', 'Delete') 
+      AND dateAdd(s, -1, @dwHistoryDate) between [{{schemaName}}].[{{tableName}}].dwStartDate and [{{schemaName}}].[{{tableName}}].dwEndDate 
 
     -- ************ Actual Data UnitTests **************** 
     EXEC reference.printLine '-- Run Actual Data UnitTests'
@@ -465,7 +466,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     ;WITH 
     S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
-      dwStartDate, dwEndDate, dwIsCurrent,
+      dwStartDate, dwEndDate, dwIsCurrent = cast(dwIsCurrent as int),
       cntVersion = count(1) over (partition by {% for key in columnsPK -%}
           [{{key.name}}], {% endfor %}dwVersion)
       FROM [{{schemaName}}].[{{tableName}}]),
