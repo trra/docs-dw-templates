@@ -123,7 +123,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
     {{query | safe | indent(8) }}
     {%- endif %}
-    {% if not query -%}UPDATE STATISTICS [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %}
 
     EXEC reference.printLine '-- Create #stage'
     -- Create temp source table with foreign key(s)
@@ -171,7 +170,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     
     IF (@loadType = 'full') 
     BEGIN
-      EXEC reference.printLine '-- Full Load: Insert into [{{schemaName}}].[{{tableName}}] deleted rows'
+      EXEC reference.printLine '-- Full Load: set dwIsDeleted flag for deleted rows'
       -- load new records
       INSERT INTO #upsert (
         {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
@@ -207,9 +206,9 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         dwSessionNo = sink.dwSessionNo,
         dwPackageName = sink.dwPackageName,
         dwStartDate = sink.dwStartDate,
+        dwVersion = sink.dwVersion,
         dwUpdateDate = sink.dwUpdateDate,
-        dwHash = sink.dwHash,
-        dwVersion = sink.dwVersion
+        dwHash = sink.dwHash
       FROM [{{schemaName}}].[{{tableName}}] sink
       WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
       
@@ -230,17 +229,19 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     END
 
     IF @@trancount = 0 AND @loadType != 'Initial' BEGIN TRANSACTION
-    EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}] dwIsCurrent flag'
+    EXEC reference.printLine '-- Modify [{{schemaName}}].[{{tableName}}] updated and deleted rows'
     UPDATE [{{schemaName}}].[{{tableName}}] 
     SET 
       dwIsCurrent = 'FALSE',
       dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
       dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime))
-    FROM #upsert src WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+    FROM #upsert src 
+    WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
       {%- if not loop.last %} AND {% endif -%}{%- endfor %}
-      AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 'TRUE'
+      AND src.dwRowChangeType in ('Update', 'Delete') 
+      AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 'TRUE'
 
-    EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
+    EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}]'
     -- load new records
     INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
       {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
@@ -265,7 +266,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       dwUpdateDate = @now,
       dwHash = src.dwHash
     FROM #upsert src
-    WHERE dwRowChangeType in ('New', 'Update')
+    WHERE src.dwRowChangeType in ('New', 'Update')
   
     IF @@trancount>0 AND @sessionNo like '%testSession' WHILE @@trancount > 0 COMMIT TRANSACTION
 

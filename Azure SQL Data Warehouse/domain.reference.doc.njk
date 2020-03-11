@@ -14,16 +14,16 @@
 {%- set spName = p.meta.object.spName -%}
 {%- set integers = ['int', 'integer', 'bigint', 'smallint', 'tinyint'] -%}
 {%- set numbers = ['numeric', 'decimal'] -%}
+{%- set floatNumbers = ['float', 'real'] -%}s
 {%- set strings = ['varchar', 'nvarchar', 'char', 'nchar'] -%}
 {%- set dates = ['date'] -%}
 {%- set times = ['time'] -%}
 {%- set datetimes = ['datetime'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set skColumnName = p.meta.object.name+'SK' -%}
-{%- set mkColumnName = p.meta.object.name+'MK' -%}
 # {{schemaName}}.{{tableName}}
 
-Domain Reference Table
+domain reference table (SCD2) without MK
 
 | |
 |-|
@@ -43,7 +43,6 @@ EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
 ```text
 Table "{{schemaName}}.{{tableName}}" [headerColor: #3498db] {
   {{skColumnName}} bigint [increment]
-  {{mkColumnName}} bigint [pk, note: "Master Key"]
   {%- for key in columns %}
   {{key.name}} {{key.dataType}}
   {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})

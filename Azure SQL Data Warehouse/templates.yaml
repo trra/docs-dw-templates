@@ -142,7 +142,7 @@ templates:
       - Procedure Name
   - name: "Data Domain: Reference Data"
     <<: *defaults
-    description: Reference table
+    description: domain reference table (SCD2) without MK
     templateFileName: Azure SQL Data Warehouse/domain.reference.njk
     metaFolder: "/.code/domain/ref/.meta/"
     outputFolder: "/.code/domain/ref/"
