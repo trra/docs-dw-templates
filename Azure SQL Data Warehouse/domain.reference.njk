@@ -96,7 +96,7 @@ EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionS
 IF @sessionStatus in ('Ready', 'Failed') BEGIN 
   EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
   BEGIN TRY
-    -- ************ ETL code starts here ****************
+    -- ************ ETL code starts here ***************
 
     IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
     BEGIN
@@ -396,7 +396,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     UPDATE [{{schemaName}}].[{{tableName}}] 
     SET 
       dwIsCurrent = 'FALSE',
-      dwEndDate = dateAdd(s, -1, @dwHistoryDate),
+      dwEndDate = dateAdd(s, -1, @dwHistoryDate)
     FROM #upsert src 
     WHERE [{{schemaName}}].[{{tableName}}].[{{mkColumnName}}] = src.[{{mkColumnName}}]
       AND src.dwRowChangeType in ('Update', 'Delete') 
