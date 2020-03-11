@@ -104,10 +104,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       CREATE TABLE [{{schemaName}}].[{{tableName}}] (
         [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
         {%- for key in columns %}
-        [{{key.name}}] {% if key.dataType in floatNumbers -%} [bigint] {%- else -%} [{{key.dataType}}] {%- endif %}
+        [{{key.name}}] {% if key.dataType in floatNumbers -%} [numeric] {%- else -%} [{{key.dataType}}] {%- endif %}
         {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
         {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
         {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
+        {%- elif key.dataType in floatNumbers -%} (20,4)
         {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}},
         {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
         {% endfor %}
@@ -141,7 +142,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {%- for key in columns %} 
         [{{key.name}}] = 
         {%- if (key.dataType in integers ) %} -1, 
-          {%- elif (key.dataType in numbers) %} -1, 
           {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
           {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
           {%- elif (key.dataType in largeObjects) %} null, 
@@ -173,7 +173,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     SELECT 
       {% for key in srcColumns -%}
       [{{key.name}}] = 
-        {%- if key.dataType in floatNumbers %} cast(src.[{{key.name}}] as bigint), -- {{key.dataType}}
+        {%- if key.dataType in floatNumbers %} cast(src.[{{key.name}}] as numeric(20,4)), -- {{key.dataType}}
         {%- else -%} src.[{{key.name}}],
         {%- endif -%}
       {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
@@ -183,7 +183,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
             {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
             {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
             {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
-            {%- elif key.dataType in floatNumbers %} convert(bigint, src.[{{key.name}}])
+            {%- elif key.dataType in floatNumbers %} convert(numeric(20,4), src.[{{key.name}}])
             {%- else %} src.[{{key.name}}]
             {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
             {%- endif -%}
@@ -235,6 +235,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           {%- if not loop.last %} AND {% endif -%}{%- endfor %}
         )
         AND dateAdd(s, -1, @dwHistoryDate) between sink.dwStartDate and sink.dwEndDate 
+        AND sink.[{{skColumnName}}] != -1
     END          
 
     -- Restore dataset on selected previous date
@@ -264,6 +265,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       
       DELETE FROM [{{schemaName}}].[{{tableName}}] 
       WHERE dwStartDate >= @dwHistoryDate
+        AND [{{skColumnName}}] != -1
 
       UPDATE [{{schemaName}}].[{{tableName}}] 
       SET 
@@ -315,7 +317,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     WHERE src.dwRowChangeType in ('New', 'Update')
 
     WHILE @@trancount>0 AND @sessionNo like '%testSession' COMMIT TRANSACTION
-    UPDATE STATISTICS [{{schemaName}}].[{{tableName}}]
 
     -- ************ Actual Data UnitTests **************** 
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Start UnitTests'
@@ -324,7 +325,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     SET @expectCountMin = CASE WHEN @loadType = 'Delta' THEN 0 ELSE @expectCountMin END
     SET @expectCountMax = CASE WHEN @loadType in ('Full', 'Initial') THEN 100000000 ELSE @expectCountMax END
     EXEC reference.printLine '-- Run Actual Data UnitTests'
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @tableName, @stepName, 'Run Actual Data UnitTests'
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Run Actual Data UnitTests'
 
     DECLARE @expectCount bigInt = (SELECT count(1) FROM #stage)
     DECLARE @actualCount bigInt, @actualCountKey bigInt, @actualCountPK bigInt, @actualNullPK bigInt
@@ -337,7 +338,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
           {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
           {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
-          {%- elif key.dataType in floatNumbers %} convert(bigint, sink.[{{key.name}}])
+          {%- elif key.dataType in floatNumbers %} convert(numeric(20,4), sink.[{{key.name}}])
           {%- else %} sink.[{{key.name}}]
           {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
           {%- endif -%}
@@ -348,7 +349,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     WHERE sink.dwIsCurrent = 'TRUE'
 
     DECLARE @checkTotalQuantity varchar(250) = test.assertEquals('checkTotalQuantity (source row quantity = destination)', @expectCount, @actualCount)
-    DECLARE @checkQuantityKey varchar(250) = test.assertEqualsInt('checkQuantityKey (Key -1)', 1, actualCountKey)
+    DECLARE @checkQuantityKey varchar(250) = test.assertEqualsInt('checkQuantityKey (Key -1)', 1, @actualCountKey)
     DECLARE @checkQuantityPK varchar(250) = test.assertEquals('checkQuantityPK (source row quantity = destination PK)', @expectCount, @actualCountPK)
     DECLARE @checkQuantityLimit varchar(250) = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
           CASE WHEN @actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END)
@@ -390,7 +391,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {%- if key.dataType in dates %} convert(nvarchar(100), [{{key.name}}], 23)
         {%- elif key.dataType in times %} convert(nvarchar(100), [{{key.name}}], 114)
         {%- elif key.dataType in datetimes %} convert(nvarchar(100), [{{key.name}}], 121)
-        {%- elif key.dataType in floatNumbers %} convert(bigint, [{{key.name}}])
+        {%- elif key.dataType in floatNumbers %} convert(numeric(20,4), [{{key.name}}])
         {%- else %} [{{key.name}}]
         {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
         {%- endif -%}
@@ -471,6 +472,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
     
     WHILE @@trancount > 0 COMMIT TRANSACTION
+    UPDATE STATISTICS [{{schemaName}}].[{{tableName}}]
   END TRY
   BEGIN CATCH
     WHILE @@trancount > 0 ROLLBACK TRANSACTION
