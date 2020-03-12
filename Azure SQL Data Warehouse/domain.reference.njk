@@ -124,9 +124,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP)
     END
 
-    IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{skColumnName}}] != -1) > 0
-      DELETE FROM [{{schemaName}}].[{{tableName}}] WHERE [{{skColumnName}}] != -1
-
     IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{skColumnName}}] = -1) = 0
     BEGIN 
       EXEC reference.printLine '-- Insert default -1 "Unknown" row'
@@ -163,7 +160,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC reference.printLine '-- Create #src'
     IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
     CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-    {{query | safe | indent(8) }}
+    {{query | safe | indent(4) }}
     {%- endif %}
 
     EXEC reference.printLine '-- Create #stage'
@@ -174,17 +171,17 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       {% for key in srcColumns -%}
       [{{key.name}}] = 
         {%- if key.dataType in floatNumbers %} cast(src.[{{key.name}}] as numeric(20,4)), -- {{key.dataType}}
-        {%- else -%} src.[{{key.name}}],
+        {%- else %} src.[{{key.name}}],
         {%- endif -%}
       {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
       {% endfor -%}
       dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), 
         concat_ws(@separator, {%- for key in srcColumns -%}
-            {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
-            {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
-            {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
-            {%- elif key.dataType in floatNumbers %} convert(numeric(20,4), src.[{{key.name}}])
-            {%- else %} src.[{{key.name}}]
+            {%- if key.dataType in dates %}convert(nvarchar(100), src.[{{key.name}}], 23)
+            {%- elif key.dataType in times %}convert(nvarchar(100), src.[{{key.name}}], 114)
+            {%- elif key.dataType in datetimes %}convert(nvarchar(100), src.[{{key.name}}], 121)
+            {%- elif key.dataType in floatNumbers %}convert(numeric(20,4), src.[{{key.name}}])
+            {%- else %}src.[{{key.name}}]
             {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
             {%- endif -%}
             {%- endfor -%}, ''))), 2)  
@@ -204,12 +201,21 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         WHEN sink.dwHash != stg.dwHash THEN 'Update' 
         ELSE 'Skip' END,
       dwHash = stg.dwHash,
-      dwLastVersion = sink.dwVersion
+      dwLastVersion = isNull(sink.dwVersion, lastVer.dwLastVersion)
     FROM #stage stg 
     LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
     ON {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
       {%- if not loop.last %} AND {% endif -%}{% endfor %} 
-    AND dateAdd(s, -1, @dwHistoryDate) between sink.dwStartDate and sink.dwEndDate 
+    AND @dwHistoryDate between sink.dwStartDate and sink.dwEndDate 
+    LEFT JOIN ( -- get last version for deleted row to keep sequence order if the record appears again
+      SELECT {% for pk in srcColumnsPK -%}[{{pk.name}}], {% endfor %}
+        dwLastVersion = max(dwVersion)
+      FROM [{{schemaName}}].[{{tableName}}] ver
+      WHERE dwEndDate < @dwHistoryDate
+        AND dwIsDeleted = 'TRUE'
+      GROUP BY {% for pk in srcColumnsPK -%}[{{pk.name}}]{%- if not loop.last %}, {% endif -%}{% endfor %}
+      ) lastVer ON {% for pk in srcColumnsPK -%}stg.[{{pk.name}}] = lastVer.[{{pk.name}}] 
+      {%- if not loop.last %} AND {% endif -%}{% endfor %}
 
     IF (@loadType = 'full') 
     BEGIN
@@ -240,7 +246,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     -- Restore dataset on selected previous date
     IF @dwHistoryDate != @now BEGIN
-      SET @message = concat('-- Restore dataset state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
+      SET @message = concat('-- Restore dataset state on [', @dwHistoryDate, '] into #current')
       EXEC reference.printLine @message
       IF OBJECT_ID('tempdb..#current') IS NOT NULL DROP TABLE #current
       CREATE TABLE #current WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
@@ -273,7 +279,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         dwEndDate = @dwEndDate
       FROM #current cur
       WHERE [{{schemaName}}].[{{tableName}}].[{{skColumnName}}] = cur.[{{skColumnName}}] 
-        AND [{{schemaName}}].[{{tableName}}].dwEndDate > @dwHistoryDate
+        AND [{{schemaName}}].[{{tableName}}].dwEndDate >= @dwHistoryDate
     END
 
     IF @@trancount = 0 BEGIN TRANSACTION
@@ -345,15 +351,16 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
           {%- endfor -%}, '') END),   
       @actualNullPK = isNull(SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END ), 0)
     FROM [{{schemaName}}].[{{tableName}}] sink 
-    JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
-    WHERE sink.dwIsCurrent = 'TRUE'
+    LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
+    WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL OR sink.[{{skColumnName}}] = -1)
+      AND sink.dwIsCurrent = 'TRUE'
 
-    DECLARE @checkTotalQuantity varchar(250) = test.assertEquals('checkTotalQuantity (source row quantity = destination)', @expectCount, @actualCount)
-    DECLARE @checkQuantityKey varchar(250) = test.assertEqualsInt('checkQuantityKey (Key -1)', 1, @actualCountKey)
-    DECLARE @checkQuantityPK varchar(250) = test.assertEquals('checkQuantityPK (source row quantity = destination PK)', @expectCount, @actualCountPK)
-    DECLARE @checkQuantityLimit varchar(250) = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
+    DECLARE @checkTotalQuantity nvarchar(max) = test.assertEquals('checkTotalQuantity (source row quantity = destination)', @expectCount, @actualCount)
+    DECLARE @checkQuantityKey nvarchar(max) = test.assertEquals('checkQuantityKey (Key -1)', 1, @actualCountKey)
+    DECLARE @checkQuantityPK nvarchar(max) = test.assertEquals('checkQuantityPK (source row quantity = destination PK)', @expectCount, @actualCountPK)
+    DECLARE @checkQuantityLimit nvarchar(max) = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
           CASE WHEN @actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END)
-    DECLARE @checkNullPK varchar(250) = test.assertEquals('checkNullPK (PK has NULL values)', 0, @actualNullPK)
+    DECLARE @checkNullPK nvarchar(max) = test.assertEquals('checkNullPK (PK has NULL values)', 0, @actualNullPK)
     SET @rowsRead = @expectCount
     SET @rowsWritten = @actualCount
 
@@ -370,20 +377,20 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     -- Raise Errors
     WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
-    IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
-    IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
-    IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
-    IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
+    IF (@checkTotalQuantity like '%TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
+    IF (@checkQuantityPK like '%TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
+    IF (@checkQuantityLimit like '%TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
+    IF (@checkNullPK like '%TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
     
     
     -- ************ History Data UnitTests ****************
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Run History Unit Tests'
     EXEC reference.printLine '-- Run History Data UnitTests'        
-    DECLARE @checkCurrentFlag varchar(250)
-    DECLARE @checkStartDate varchar(250)
-    DECLARE @checkVersion varchar(250)
-    DECLARE @checkDeletedRows varchar(250)
-    DECLARE @checkCardinality varchar(250)
+    DECLARE @checkCurrentFlag nvarchar(max)
+    DECLARE @checkStartDate nvarchar(max)
+    DECLARE @checkVersion nvarchar(max)
+    DECLARE @checkDeletedRows nvarchar(max)
+    DECLARE @checkCardinality nvarchar(max)
 
     ;WITH 
     S as (
@@ -432,11 +439,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     -- DEBUG: select all failed records
     -- SELECT * FROM TESTS WHERE chk_currentFlag != 0 OR cnt_deleted_rows != 0 OR chk_start_date != 0     
     SELECT 
-        @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
-        @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
-        @checkVersion = test.assertEqualsInt('checkVersion (unique)', 0, sum(chk_version)),
-        @checkDeletedRows = test.assertEqualsInt('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
-        @checkCardinality = test.assertEqualsInt('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
+        @checkCurrentFlag = test.assertEquals('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
+        @checkStartDate = test.assertEquals('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
+        @checkVersion = test.assertEquals('checkVersion (unique)', 0, sum(chk_version)),
+        @checkDeletedRows = test.assertEquals('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
+        @checkCardinality = test.assertEquals('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
     FROM TESTS CROSS JOIN Cardinality
 
     -- Info
@@ -458,9 +465,9 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
 
     -- Raise Errors
     WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
-    IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
-    IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
-    IF (@checkVersion like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
+    IF (@checkCurrentFlag like '%TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
+    IF (@checkStartDate like '%TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
+    IF (@checkVersion like '%TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
 
     -- ************ ETL code ends here ****************                
 
