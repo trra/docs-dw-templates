@@ -23,7 +23,7 @@
 {%- set mkColumnName = p.meta.object.name+'MK' -%}
 # {{schemaName}}.{{tableName}}
 
-Domain Master Table (SCD2)
+Domain Master Table (SCD2, MK, History)
 
 | |
 |-|
@@ -55,9 +55,9 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
   dwSessionNo varchar
   dwPackageName varchar
   dwIsDeleted bit
-  dwIsCurrent bit
   dwStartDate datetime
   dwEndDate datetime
+  dwIsLastVersion bit
   dwVersion int
   dwUpdateDate datetime
   dwHash varchar

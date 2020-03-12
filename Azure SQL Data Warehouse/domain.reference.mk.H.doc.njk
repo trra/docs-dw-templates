@@ -23,7 +23,7 @@
 {%- set mkColumnName = p.meta.object.name+'MK' -%}
 # {{schemaName}}.{{tableName}}
 
-Domain Master Table (SCD2)
+Domain Reference Table (SCD2, MK, History)
 
 | |
 |-|
@@ -41,7 +41,7 @@ EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 ### Table structure
 
 ```text
-Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
+Table "{{schemaName}}.{{tableName}}" [headerColor: #3498db] {
   {{skColumnName}} bigint [increment]
   {{mkColumnName}} bigint [pk, note: "Master Key"]
   {%- for key in columns %}
@@ -54,10 +54,7 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #316896] {
   //// -- internal DW columns
   dwSessionNo varchar
   dwPackageName varchar
-  dwIsDeleted bit
-  dwIsCurrent bit
   dwStartDate datetime
-  dwEndDate datetime
   dwVersion int
   dwUpdateDate datetime
   dwHash varchar

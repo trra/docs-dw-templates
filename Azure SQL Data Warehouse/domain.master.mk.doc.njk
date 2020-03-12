@@ -14,16 +14,16 @@
 {%- set spName = p.meta.object.spName -%}
 {%- set integers = ['int', 'integer', 'bigint', 'smallint', 'tinyint'] -%}
 {%- set numbers = ['numeric', 'decimal'] -%}
+{%- set floatNumbers = ['float', 'real'] -%}s
 {%- set strings = ['varchar', 'nvarchar', 'char', 'nchar'] -%}
 {%- set dates = ['date'] -%}
 {%- set times = ['time'] -%}
 {%- set datetimes = ['datetime'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set skColumnName = p.meta.object.name+'SK' -%}
-{%- set mkColumnName = p.meta.object.name+'MK' -%}
 # {{schemaName}}.{{tableName}}
 
-Domain Reference Table
+Domain Master table (SCD2, MK)
 
 | |
 |-|
@@ -35,7 +35,7 @@ Domain Reference Table
 ### Execution sample
 
 ```sql
-EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
+EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
 ```
 
 ### Table structure
@@ -43,7 +43,7 @@ EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL
 ```text
 Table "{{schemaName}}.{{tableName}}" [headerColor: #3498db] {
   {{skColumnName}} bigint [increment]
-  {{mkColumnName}} bigint [pk, note: "Master Key"]
+  {{mkColumnName}} [bigint] NOT NULL
   {%- for key in columns %}
   {{key.name}} {{key.dataType}}
   {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
@@ -54,7 +54,10 @@ Table "{{schemaName}}.{{tableName}}" [headerColor: #3498db] {
   //// -- internal DW columns
   dwSessionNo varchar
   dwPackageName varchar
+  dwIsDeleted bit
+  dwIsCurrent bit
   dwStartDate datetime
+  dwEndDate datetime
   dwVersion int
   dwUpdateDate datetime
   dwHash varchar

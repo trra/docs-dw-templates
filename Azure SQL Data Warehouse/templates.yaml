@@ -118,7 +118,7 @@ templates:
       - Object Name
       - Destination Schema
       - Procedure Name
-  - name: "Data Domain: Master Data"
+  - name: "Data Domain: Master Data (SCD2)"
     <<: *defaults
     description: Master Data table with history
     templateFileName: Azure SQL Data Warehouse/domain.master.njk
@@ -140,9 +140,53 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
+  - name: "Data Domain: Master Data (SCD2, MK)"
+    <<: *defaults
+    description: Master Data table with history
+    templateFileName: Azure SQL Data Warehouse/domain.master.mk.njk
+    metaFolder: "/.code/domain/master/.meta/"
+    outputFolder: "/.code/domain/master/"
+    outputFileName: "{destSchema}.sp{destTable}.mk.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
+  - name: "Data Domain: Master Data (SCD2, MK, History)"
+    <<: *defaults
+    description: Master Data table with history
+    templateFileName: Azure SQL Data Warehouse/domain.master.mk.H.njk
+    metaFolder: "/.code/domain/master/.meta/"
+    outputFolder: "/.code/domain/master/"
+    outputFileName: "{destSchema}.sp{destTable}.mk.H.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
   - name: "Data Domain: Reference Data"
     <<: *defaults
-    description: domain reference table (SCD2) without MK
+    description: domain reference table (SCD2)
     templateFileName: Azure SQL Data Warehouse/domain.reference.njk
     metaFolder: "/.code/domain/ref/.meta/"
     outputFolder: "/.code/domain/ref/"
@@ -162,13 +206,35 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
-  - name: "Data Domain: Reference Data + history"
+  - name: "Data Domain: Reference Data (SCD2, MK)"
     <<: *defaults
-    description: Reference table with history
-    templateFileName: Azure SQL Data Warehouse/domain.reference.H.njk
+    description: domain reference table
+    templateFileName: Azure SQL Data Warehouse/domain.reference.mk.njk
     metaFolder: "/.code/domain/ref/.meta/"
     outputFolder: "/.code/domain/ref/"
-    outputFileName: "{destSchema}.sp{destTable}.H.sql"
+    outputFileName: "{destSchema}.sp{destTable}.mk.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
+  - name: "Data Domain: Reference Data (SCD2, MK, History)"
+    <<: *defaults
+    description: Reference table with history
+    templateFileName: Azure SQL Data Warehouse/domain.reference.mk.H.njk
+    metaFolder: "/.code/domain/ref/.meta/"
+    outputFolder: "/.code/domain/ref/"
+    outputFileName: "{destSchema}.sp{destTable}.mk.H.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"
