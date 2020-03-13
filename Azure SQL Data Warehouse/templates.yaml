@@ -250,13 +250,35 @@ templates:
       - Destination Table
       - Select Destination Columns
       - Procedure Name
-  - name: "Data Domain: Link"
+  - name: "Data Domain: Link (SCD2)"
     <<: *defaults
     description: Link table with history
     templateFileName: Azure SQL Data Warehouse/domain.link.njk
     metaFolder: "/.code/domain/link/.meta/"
     outputFolder: "/.code/domain/link/"
     outputFileName: "{destSchema}.sp{destTable}.sql"
+    destSchema: ""
+    destTable: "{ObjectName}"
+    spSchema: "{destSchema}"
+    spName: "sp{ObjectName}"
+    objectNameMask: <exclusionMaskArray>
+    wizardQuestions:
+      - Naming Format
+      - Select Source Table
+      - Select Source Columns
+      - Select Source PK Columns
+      - Object Name
+      - Destination Schema
+      - Destination Table
+      - Select Destination Columns
+      - Procedure Name
+  - name: "Data Domain: Link (SCD2, History)"
+    <<: *defaults
+    description: Link table with history
+    templateFileName: Azure SQL Data Warehouse/domain.link.H.njk
+    metaFolder: "/.code/domain/link/.meta/"
+    outputFolder: "/.code/domain/link/"
+    outputFileName: "{destSchema}.sp{destTable}.H.sql"
     destSchema: ""
     destTable: "{ObjectName}"
     spSchema: "{destSchema}"

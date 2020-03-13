@@ -36,7 +36,7 @@ AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
 -- Source:      {%if query%}SQL query{%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif%} 
--- Destination: [{{schemaName}}].[{{tableName}}] domain reference table (SCD2) without MK
+-- Destination: [{{schemaName}}].[{{tableName}}] domain master table (SCD2)
 --
 -- Execution sample:
 -- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
@@ -121,7 +121,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         dwVersion [int] NOT NULL,
         dwUpdateDate [datetime] NOT NULL,
         dwHash [varchar](40) NOT NULL
-      ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP)
+      ) WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
     END
 
     IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{skColumnName}}] = -1) = 0
@@ -130,7 +130,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] ON;
       INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
         [{{skColumnName}}],
-        {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.lasts %}
+        {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.last %}
         {% endif -%}{%- endfor %}
         dwSessionNo, dwPackageName, dwIsDeleted, dwIsCurrent, 
         dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash )

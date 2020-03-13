@@ -32,7 +32,10 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
 AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
--- Fetch {% if query %}SQL query{%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain master table [{{schemaName}}].[{{tableName}}]
+-- Source: {% if query %}SQL query{%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} 
+-- Destinations: 
+-- - [{{schemaName}}].[{{tableName}}] domain master table (actual) 
+-- - [{{schemaName}}].[{{tableName}}History] history of changes 
 --
 -- Execution sample:
 -- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL 

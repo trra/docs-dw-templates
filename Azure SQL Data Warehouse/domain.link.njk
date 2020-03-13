@@ -14,12 +14,16 @@
 {%- set spName = p.meta.object.spName -%}
 {%- set integers = ['int', 'integer', 'bigint', 'smallint', 'tinyint'] -%}
 {%- set numbers = ['numeric', 'decimal'] -%}
+{%- set floatNumbers = ['float', 'real'] -%}
 {%- set strings = ['varchar', 'nvarchar', 'char', 'nchar'] -%}
 {%- set dates = ['date'] -%}
 {%- set times = ['time'] -%}
 {%- set datetimes = ['datetime'] -%}
 {%- set largeObjects = ['varchar', 'nvarchar', 'varbinary'] -%}
 {%- set skColumnName = p.meta.object.name+'SK' -%}
+IF SCHEMA_ID('{{spSchema}}') IS NULL EXEC ('CREATE SCHEMA {{spSchema}}')
+GO
+
 IF OBJECT_ID ('[{{spSchema}}].[{{spName}}]', 'P') IS NOT NULL DROP PROCEDURE [{{spSchema}}].[{{spName}}];
 GO
 
@@ -31,7 +35,8 @@ CREATE PROCEDURE [{{spSchema}}].[{{spName}}]
 AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
--- Fetch {% if query %} SQL query {%- else -%} [{{srcSchemaName}}].[{{srcTableName}}]{%- endif %} into domain link table [{{schemaName}}].[{{tableName}}]
+-- Source:      {%if query%}SQL query{%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif%} 
+-- Destination: [{{schemaName}}].[{{tableName}}] domain link table (SCD2)
 --
 -- Execution sample:
 -- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
@@ -60,12 +65,17 @@ SET @dwHistoryDate = isNull(@dwHistoryDate, @now)
 
 -- read domain settings
 DECLARE @settings nvarchar(max) = reference.getDomainParams(@domainCode, @now, @sessionNo, @objectCode)
-SET @settings = JSON_MODIFY(@settings, '$.loadType', isNull(@loadType, JSON_VALUE(@settings, '$.loadType')))
+SET @loadType = CASE
+  WHEN OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL THEN 'Initial'
+  ELSE isNull(@loadType, JSON_VALUE(@settings, '$.loadType'))
+  END
+SET @settings = JSON_MODIFY(@settings, '$.loadType', @loadType)
+
 DECLARE @dwInitialDate datetime = CAST(JSON_VALUE(@settings, '$.dwInitialDate') as datetime)
 DECLARE @dwEndDate datetime = CAST(JSON_VALUE(@settings, '$.dwEndDate') as datetime)
+DECLARE @dwCurrentDate datetime = CAST(JSON_VALUE(@settings, '$.dwCurrentDate') as datetime)
 DECLARE @separator nvarchar(2) = JSON_VALUE(@settings, '$.separator')
 DECLARE @version nvarchar(10) = JSON_VALUE(@settings, '$.version')
-SET @loadType = JSON_VALUE(@settings, '$.loadType')
 PRINT @settings
 EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @settings
 
@@ -87,44 +97,19 @@ EXEC [etl].[checkSessionStatus] @sessionNo, @packageName, @objectCode, @sessionS
 IF @sessionStatus in ('Ready', 'Failed') BEGIN 
   EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = 'Running', @countRows = NULL
   BEGIN TRY
-  -- ************ ETL code starts here ****************
-  -- perform action
-
+  -- ************ ETL code starts here ***************
   IF OBJECT_ID('[{{schemaName}}].[{{tableName}}]', 'U') IS NULL
   BEGIN
     EXEC reference.printLine '-- Create table [{{schemaName}}].[{{tableName}}]'
     CREATE TABLE [{{schemaName}}].[{{tableName}}] (
       [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
       {%- for key in columns %}
-      [{{key.name}}] [{{key.dataType}}] 
+      [{{key.name}}] {% if key.dataType in floatNumbers -%} [numeric] {%- else -%} [{{key.dataType}}] {%- endif %}
       {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
       {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
       {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
-      {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
-      {{- "," -}}
-      {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
-      {% endfor %}
-      dwSessionNo [varchar](50) NOT NULL,
-      dwPackageName [varchar](100) NOT NULL,
-      dwStartDate [datetime] NOT NULL,
-      dwVersion [int] NOT NULL,
-      dwUpdateDate [datetime] NOT NULL,
-      dwHash [varchar](40) NOT NULL
-    ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
-    -- EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
-  END
-  IF OBJECT_ID('[{{schemaName}}].[{{tableName}}History]', 'U') IS NULL
-  BEGIN
-    EXEC reference.printLine '-- Create table [{{schemaName}}].[{{tableName}}History]'
-    CREATE TABLE [{{schemaName}}].[{{tableName}}History] (
-      [{{skColumnName}}] [bigint] IDENTITY(1,1) NOT NULL,
-      {%- for key in columns %}
-      [{{key.name}}] [{{key.dataType}}] 
-      {%- if key.dataType in strings and key.characterMaximumLength > 0 -%} ({{-key.characterMaximumLength-}})
-      {%- elif key.dataType in largeObjects and (not key.characterMaximumLength or key.characterMaximumLength == -1) -%} (max)
-      {%- elif key.dataType in numbers and key.numericPrecision > 0 and key.numericScale > 0 -%} ({{key.numericPrecision}},{{key.numericScale-}})
-      {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}}
-      {{- "," -}}
+      {%- elif key.dataType in floatNumbers -%} (20,4)
+      {%- endif %} {{ "NULL" if key.isNullable else "NOT NULL"-}},
       {%- for pk in columnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor -%} 
       {% endfor %}
       dwSessionNo [varchar](50) NOT NULL,
@@ -132,11 +117,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       dwIsDeleted [bit] NOT NULL,
       dwStartDate [datetime] NOT NULL,
       dwEndDate [datetime] NOT NULL,
-      dwIsLastVersion [bit] NOT NULL,
+      dwIsCurrent [bit] NOT NULL,
       dwVersion [int] NOT NULL,
       dwUpdateDate [datetime] NOT NULL,
       dwHash [varchar](40) NOT NULL
-    ) WITH ( DISTRIBUTION = ROUND_ROBIN, HEAP )
+    ) WITH (DISTRIBUTION = ROUND_ROBIN, HEAP)
   END
 
   IF (SELECT count(*) FROM [{{schemaName}}].[{{tableName}}] WHERE [{{skColumnName}}] = -1) = 0
@@ -147,13 +132,13 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       [{{skColumnName}}], 
       {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.last %}
       {% endif -%}{%- endfor %}
-      dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash )
+      dwSessionNo, dwPackageName, dwIsDeleted, dwIsCurrent, 
+      dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash )
     SELECT 
       [{{skColumnName}}] = -1,
       {%- for key in columns %} 
       [{{key.name}}] = 
       {%- if (key.dataType in integers ) %} -1, 
-        {%- elif (key.dataType in numbers) %} -1, 
         {%- elif (key.dataType in strings and key.characterMaximumLength<7) %} 'U', 
         {%- elif (key.dataType in strings and key.characterMaximumLength>=7) %} 'UNKNOWN', 
         {%- elif (key.dataType in largeObjects) %} null, 
@@ -161,7 +146,10 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       {%- endfor %}
       dwSessionNo = @sessionNo,
       dwPackageName = @packageName,
+      dwIsDeleted = 'FALSE',
+      dwIsCurrent = 'TRUE',
       dwStartDate = @dwInitialDate,
+      dwEndDate = @dwEndDate,
       dwVersion = 1,
       dwUpdateDate = @now,
       dwHash = ''
@@ -172,8 +160,8 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   EXEC reference.printLine '-- Create #src'
   IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
   CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-  {{query | safe | indent(8) }}
-  {% endif %}
+  {{query | safe | indent(4) }}
+  {%- endif %}
 
   EXEC reference.printLine '-- Create #stage'
   -- Create temp source table with foreign key(s)
@@ -181,18 +169,22 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   CREATE TABLE #stage WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
   SELECT 
     {% for key in srcColumns -%}
-    [{{key.name}}] = src.[{{key.name}}],
+    [{{key.name}}] = 
+        {%- if key.dataType in floatNumbers %} cast(src.[{{key.name}}] as numeric(20,4)), -- {{key.dataType}}
+        {%- else %} src.[{{key.name}}],
+        {%- endif -%}
     {%- for pk in srcColumnsPK -%}{%- if pk.name===key.name %} -- PK {%- endif -%}{%- endfor %} 
     {% endfor -%}
     dwHash = convert(char(40), hashBytes('SHA2_256', convert(nvarchar(max), 
       concat_ws(@separator, {%- for key in srcColumns -%}
-          {%- if key.dataType in dates %} convert(nvarchar(100), src.[{{key.name}}], 23)
-          {%- elif key.dataType in times %} convert(nvarchar(100), src.[{{key.name}}], 114)
-          {%- elif key.dataType in datetimes %} convert(nvarchar(100), src.[{{key.name}}], 121)
-          {%- else %} src.[{{key.name}}]
+          {%- if key.dataType in dates %}convert(nvarchar(100), src.[{{key.name}}], 23)
+          {%- elif key.dataType in times %}convert(nvarchar(100), src.[{{key.name}}], 114)
+          {%- elif key.dataType in datetimes %}convert(nvarchar(100), src.[{{key.name}}], 121)
+          {%- elif key.dataType in floatNumbers %}convert(numeric(20,4), src.[{{key.name}}])
+          {%- else %}src.[{{key.name}}]
           {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
-          {% endif -%}
-          {%- endfor -%}))), 2) 
+          {%- endif -%}
+          {%- endfor -%}, ''))), 2)  
   FROM {% if not query %}[{{srcSchemaName}}].[{{srcTableName}}]{% else %}#src{% endif %} src
 
   EXEC reference.printLine '-- Create #upsert'
@@ -200,34 +192,40 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
   IF OBJECT_ID('tempdb..#upsert') IS NOT NULL DROP TABLE #upsert
   CREATE TABLE #upsert WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
   SELECT DISTINCT
-    [{{skColumnName}}] = coalesce(sink.[{{skColumnName}}], sinkH.[{{skColumnName}}]),
+    [{{skColumnName}}] = sink.[{{skColumnName}}],
     {% for key in columns -%}
     [{{key.name}}] = stg.[{{key.name}}],
     {% endfor -%}
     dwRowChangeType = CASE 
-      WHEN coalesce(sink.[{{skColumnName}}], sinkH.[{{skColumnName}}]) IS NULL THEN 'New' 
-      WHEN coalesce(sink.dwHash, sinkH.dwHash) != stg.dwHash THEN 'Update' 
+      WHEN sink.[{{skColumnName}}] IS NULL THEN 'New' 
+      WHEN sink.dwHash != stg.dwHash THEN 'Update' 
       ELSE 'Skip' END,
     dwHash = stg.dwHash,
-    dwLastVersion = coalesce(sink.dwVersion, sinkH.dwVersion)
+    dwLastVersion = isNull(sink.dwVersion, lastVer.dwLastVersion)
   FROM #stage stg 
   LEFT JOIN [{{schemaName}}].[{{tableName}}] sink 
-    ON {% for pk in columnsPK %}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
-    {{ 'AND ' if not loop.last }}{%- endfor %}
-    AND sink.dwStartDate <= @dwHistoryDate
-  LEFT JOIN [{{schemaName}}].[{{tableName}}History] sinkH
-    ON {% for pk in columnsPK %}sinkH.[{{pk.name}}] = stg.[{{pk.name}}] 
-    {{ 'AND ' if not loop.last }}{%- endfor %}
-    AND dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sinkH.dwStartDate and sinkH.dwEndDate 
+    ON {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = stg.[{{pk.name}}] 
+      {%- if not loop.last %} AND {% endif -%}{% endfor %} 
+    AND @dwHistoryDate between sink.dwStartDate and sink.dwEndDate 
+  LEFT JOIN ( -- get last version for deleted row to keep sequence order if the record appears again
+    SELECT {% for pk in srcColumnsPK -%}[{{pk.name}}], {% endfor %}
+      dwLastVersion = max(dwVersion)
+    FROM [{{schemaName}}].[{{tableName}}] ver
+    WHERE dwEndDate < @dwHistoryDate
+      AND dwIsDeleted = 'TRUE'
+    GROUP BY {% for pk in srcColumnsPK -%}[{{pk.name}}]{%- if not loop.last %}, {% endif -%}{% endfor %}
+    ) lastVer ON {% for pk in srcColumnsPK -%}stg.[{{pk.name}}] = lastVer.[{{pk.name}}] 
+    {%- if not loop.last %} AND {% endif -%}{% endfor %}
 
   IF (@loadType = 'full') 
   BEGIN
-    EXEC reference.printLine '-- Full Load: Insert into [{{schemaName}}].[{{tableName}}History] deleted rows'
+    EXEC reference.printLine '-- Full Load: set dwIsDeleted flag for deleted rows'
     -- load new records
     INSERT INTO #upsert (
-      [{{skColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-      {% endif -%}{% endfor %}
-      dwRowChangeType, dwHash, dwLastVersion 
+      [{{skColumnName}}], 
+        {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.lasts %}
+        {% endif -%}{%- endfor %}
+        dwRowChangeType, dwHash, dwLastVersion 
       )
     SELECT DISTINCT
       [{{skColumnName}}] = sink.[{{skColumnName}}],
@@ -238,351 +236,266 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       dwHash = sink.dwHash,
       dwLastVersion = sink.dwVersion
     FROM [{{schemaName}}].[{{tableName}}] sink 
-    LEFT JOIN [{{schemaName}}].[{{tableName}}History] sinkH 
-      ON {% for pk in columnsPK %}sink.[{{pk.name}}] = sinkH.[{{pk.name}}] 
-      {{ 'AND ' if not loop.last -}}{%- endfor -%}
-      AND sinkH.dwIsLastVersion = 1
     WHERE NOT EXISTS (
-      SELECT 1 FROM #stage src 
-      WHERE {% for pk in columnsPK %}src.[{{pk.name}}] = sink.[{{pk.name}}] 
-        {{ 'AND ' if not loop.last }}{%- endfor -%}
-      )
+      SELECT 1 FROM #stage src WHERE {% for pk in srcColumnsPK -%}sink.[{{pk.name}}] = src.[{{pk.name}}] 
+          {%- if not loop.last %} AND {% endif -%}{%- endfor %}
+     )
+    AND dateAdd(s, -1, @dwHistoryDate) between sink.dwStartDate and sink.dwEndDate 
     AND sink.[{{skColumnName}}] != -1 
   END          
 
   -- Restore dataset on selected previous date
   IF @dwHistoryDate != @now BEGIN
-    SET @message = concat('-- Restore dataset state on [', @dwHistoryDate, '] into [{{schemaName}}].[{{tableName}}]')
+    SET @message = concat('-- Restore dataset state on [', @dwHistoryDate, '] into #current')
     EXEC reference.printLine @message
     IF OBJECT_ID('tempdb..#current') IS NOT NULL DROP TABLE #current
     CREATE TABLE #current WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
     SELECT 
+      [{{skColumnName}}] = sink.[{{skColumnName}}],
       {% for key in columns -%}
       [{{key.name}}] = sink.[{{key.name}}],
       {% endfor -%}
       dwSessionNo = sink.dwSessionNo,
       dwPackageName = sink.dwPackageName,
+      dwIsDeleted = sink.dwIsDeleted,
       dwStartDate = sink.dwStartDate,
+      dwVersion = sink.dwVersion,
       dwUpdateDate = sink.dwUpdateDate,
-      dwHash = sink.dwHash,
-      dwVersion = sink.dwVersion
-    FROM [{{schemaName}}].[{{tableName}}History] sink
-    WHERE dateAdd(s, -1, cast(@dwHistoryDate as datetime)) between sink.dwStartDate and sink.dwEndDate 
-    UNION
-    SELECT 
-      {% for key in columns -%}
-      [{{key.name}}] = sink.[{{key.name}}],
-      {% endfor -%}
-      dwSessionNo = sink.dwSessionNo,
-      dwPackageName = sink.dwPackageName,
-      dwStartDate = sink.dwStartDate,
-      dwUpdateDate = sink.dwUpdateDate,
-      dwHash = sink.dwHash,
-      dwVersion = sink.dwVersion
+      dwHash = sink.dwHash
     FROM [{{schemaName}}].[{{tableName}}] sink
-    WHERE sink.dwStartDate <= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
+    WHERE dateAdd(s, -1, @dwHistoryDate) between sink.dwStartDate and sink.dwEndDate 
 
     IF @@trancount = 0 BEGIN TRANSACTION
     SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}]')
-    DELETE FROM [{{schemaName}}].[{{tableName}}] 
-    
-    SET @message = concat('-- Delete all history after [', @dwHistoryDate, '] from [{{schemaName}}].[{{tableName}}History]')
     EXEC reference.printLine @message
-    DELETE FROM [{{schemaName}}].[{{tableName}}History] 
-    WHERE dwEndDate >= dateAdd(s, -1, cast(@dwHistoryDate as datetime))
 
-    UPDATE [{{schemaName}}].[{{tableName}}History] 
-    SET dwIsLastVersion = 'TRUE'
-    FROM #current cur
-    WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = cur.[{{pk.name}}] 
-      {{ 'AND ' if not loop.last }}{%- endfor -%}
-      AND [{{schemaName}}].[{{tableName}}History].dwVersion = isNull(cur.dwVersion, 0) - 1
-    
-    INSERT INTO [{{schemaName}}].[{{tableName}}] (
-      {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-      {% endif -%}{% endfor -%}
-      dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
-    )
-    SELECT {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-      {% endif -%}{% endfor -%}
-      dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
-    FROM #current
+    DELETE FROM [{{schemaName}}].[{{tableName}}] 
+      WHERE dwStartDate >= @dwHistoryDate
+        AND [{{skColumnName}}] != -1
+
+      UPDATE [{{schemaName}}].[{{tableName}}] 
+      SET 
+        dwIsCurrent = 'TRUE',
+        dwEndDate = @dwEndDate
+        FROM #current cur
+      WHERE [{{schemaName}}].[{{tableName}}].[{{skColumnName}}] = cur.[{{skColumnName}}] 
+        AND [{{schemaName}}].[{{tableName}}].dwEndDate >= @dwHistoryDate
   END
 
   IF @@trancount = 0 BEGIN TRANSACTION
-  EXEC reference.printLine '-- Update [{{schemaName}}].[{{tableName}}History] dwLastVersion'
-  UPDATE [{{schemaName}}].[{{tableName}}History] 
-  SET dwIsLastVersion = 'FALSE'
-  FROM #upsert src 
-  WHERE {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}History].[{{pk.name}}] = src.[{{pk.name}}] 
-    {{ 'AND ' if not loop.last -}}{%- endfor -%}
-    AND src.dwRowChangeType in ('Update', 'Delete') AND [{{schemaName}}].[{{tableName}}History].dwIsLastVersion = 'TRUE'
-
-  EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}History]'
-  -- load new records
-  INSERT INTO [{{schemaName}}].[{{tableName}}History] ( 
-    {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-    {% endif -%}{% endfor %} 
-    dwSessionNo, dwPackageName, dwIsLastVersion, dwIsDeleted, 
-    dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
-  SELECT
-    {% for key in columns -%}
-    [{{key.name}}] = cur.[{{key.name}}],
-    {% endfor -%}
-    dwSessionNo = cur.dwSessionNo,
-    dwPackageName = cur.dwPackageName,
-    dwIsLastVersion = 'TRUE',
-    dwIsDeleted = CASE WHEN dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
-    dwStartDate = cur.dwStartDate,
-    dwEndDate = dateAdd(s, -1, cast(@dwHistoryDate as datetime)),
-    dwVersion = isNull(src.dwLastVersion, 1),
-    dwUpdateDate = @now,
-    dwHash = cur.dwHash
-  FROM [{{schemaName}}].[{{tableName}}] cur JOIN #upsert src 
-    ON {% for pk in columnsPK %}cur.[{{pk.name}}] = src.[{{pk.name}}] 
-    {{ 'AND ' if not loop.last -}}{%- endfor %}
-  WHERE dwRowChangeType in ('Update', 'Delete')
-
-  EXEC reference.printLine '-- Insert [{{schemaName}}].[{{tableName}}]'
-  -- load new records
-  INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
-    {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-    {% endif -%}{% endfor %} 
-    dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
-    )
-  SELECT
-    {% for key in columns -%}
-    [{{key.name}}] = src.[{{key.name}}],
-    {% endfor -%}
-    dwSessionNo = @sessionNo,
-    dwPackageName = @packageName,
-    dwStartDate = CASE 
-      -- #note: dwStartDate can base on src.<startDate>
-      WHEN src.dwLastVersion IS NULL AND @loadType = 'Initial' THEN @dwInitialDate 
-      ELSE @dwHistoryDate END,
-    dwVersion = isNull(src.dwLastVersion, 0) + 1,
-    dwUpdateDate = @now,
-    dwHash = src.dwHash
-  FROM #upsert src
-  WHERE dwRowChangeType in ('New', 'Update')
-
-  EXEC reference.printLine '-- Delete updated and deleted rows from [{{schemaName}}].[{{tableName}}]'
-  DELETE FROM [{{schemaName}}].[{{tableName}}] 
-  WHERE EXISTS (
-    SELECT 1 
+    EXEC reference.printLine '-- Modify [{{schemaName}}].[{{tableName}}] updated and deleted rows'
+    UPDATE [{{schemaName}}].[{{tableName}}] 
+    SET 
+      dwIsCurrent = 'FALSE',
+      dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
+      dwEndDate = dateAdd(s, -1, @dwHistoryDate)
     FROM #upsert src 
-    WHERE src.dwRowChangeType in ('Update', 'Delete')
-      AND {% for pk in columnsPK %}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
-      {{ 'AND ' if not loop.last -}}{%- endfor -%}
-    )
-  AND dwUpdateDate != @now
+    WHERE {% for pk in srcColumnsPK -%}[{{schemaName}}].[{{tableName}}].[{{pk.name}}] = src.[{{pk.name}}] 
+      {%- if not loop.last %} AND {% endif -%}{%- endfor %}
+      AND src.dwRowChangeType in ('Update', 'Delete') 
+      AND [{{schemaName}}].[{{tableName}}].dwIsCurrent = 'TRUE'
 
-  -- ************ Actual Data UnitTests **************** 
-  EXEC reference.printLine '-- Run Actual Data UnitTests'
-  DECLARE @checkTotalQuantity varchar(250)
-  DECLARE @checkQuantityKey varchar(250)
-  DECLARE @checkQuantityPK varchar(250)
-  DECLARE @checkQuantityLimit varchar(250)
-  DECLARE @checkNullPK varchar(250)
-  DECLARE @expectCountMin bigInt, @expectCountMax bigInt
-  EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
-  SET @expectCountMin = CASE WHEN @loadType = 'Delta' THEN 0 ELSE @expectCountMin END
-  SET @expectCountMax = CASE WHEN @loadType in ('Full', 'Initial') THEN 100000000 ELSE @expectCountMax END
-  ;WITH 
-    Expect as (SELECT expectCount = count(*) FROM #stage),
-    Actual as (
-      SELECT 
-        actualCount = isNull(SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),0),
-        actualCountKey = isNull(SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 1 ELSE 0 END),0),
-        actualCountPK = COUNT(DISTINCT CASE
-            WHEN sink.[{{skColumnName}}] = -1 THEN NULL
-            ELSE concat_ws(@separator, {% for pk in columnsPK %}sink.[{{pk.name}}], {% endfor %}'' ) END),
-        actualNullPK = isNull(SUM(CASE WHEN {% for pk in columnsPK %}(sink.[{{pk.name}}] IS NULL){{ ' OR ' if not loop.last }}{% endfor %} THEN 1 ELSE 0 END),0)
-      FROM [{{schemaName}}].[{{tableName}}] sink 
-      LEFT JOIN #stage src 
-        ON {% for pk in columnsPK %}sink.[{{pk.name}}] = src.[{{pk.name}}] 
-        {{ 'AND ' if not loop.last }}{%- endfor -%}
-      WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL) OR (sink.[{{skColumnName}}] = -1)
+    EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}]'
+    -- load new records
+    INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
+      {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
+      {% endif -%}{%- endfor %} 
+      dwSessionNo, dwPackageName, dwIsDeleted, dwStartDate, dwEndDate, 
+      dwIsCurrent, dwVersion, dwUpdateDate, dwHash
       )
-  SELECT 
-    @checkTotalQuantity = test.assertEqualsInt('checkTotalQuantity (source row quantity = destination)', expectCount, actualCount),
-    @checkQuantityKey = test.assertEqualsInt('checkQuantityKey (destination dimKey = 1)', 1, actualCountKey),
-    @checkQuantityPK = test.assertEqualsInt('checkQuantityPK (source row quantity = destination PK)', expectCount, actualCountPK),
-    @checkQuantityLimit = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
-        CASE WHEN actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END),
-    @checkNullPK = test.assertEqualsInt('checkNullPK (PK has NULL values)', 0, actualNullPK),
-    @rowsRead = expectCount, @rowsWritten = actualCount
-  FROM Actual CROSS JOIN Expect
+    SELECT
+      {% for key in columns -%}
+      [{{key.name}}] = src.[{{key.name}}],
+      {% endfor -%}
+      dwSessionNo = @sessionNo,
+      dwPackageName = @packageName,
+      dwIsDeleted = 'FALSE',
+      dwStartDate = CASE 
+        -- #note: dwStartDate can base on src.<startDate>
+        WHEN src.dwLastVersion IS NULL AND @loadType = 'Initial' THEN @dwInitialDate 
+        ELSE @dwHistoryDate END,
+      dwEndDate = @dwEndDate,
+      dwIsCurrent = 'TRUE',
+      dwVersion = isNull(src.dwLastVersion, 0) + 1,
+      dwUpdateDate = @now,
+      dwHash = src.dwHash
+    FROM #upsert src
+    WHERE src.dwRowChangeType in ('New', 'Update')
 
-  -- Info
-  PRINT @checkTotalQuantity
-  PRINT @checkQuantityKey
-  PRINT @checkQuantityPK
-  PRINT @checkQuantityLimit
-  
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityKey
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
+    WHILE @@trancount>0 AND @sessionNo like '%testSession' COMMIT TRANSACTION
 
-  -- Raise Errors
-  IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
-  IF (@checkTotalQuantity like 'TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
-  IF (@checkQuantityPK like 'TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
-  IF (@checkQuantityLimit like 'TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
-  IF (@checkNullPK like 'TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
-  
-  
-  -- ************ History Data UnitTests ****************
-  EXEC reference.printLine '-- Run History Data UnitTests'        
-  DECLARE @checkCurrentFlag varchar(250)
-  DECLARE @checkStartDate varchar(250)
-  DECLARE @checkVersion varchar(250)
-  DECLARE @checkDeletedRows varchar(250)
-  DECLARE @checkCardinality varchar(250)
+    -- ************ Actual Data UnitTests **************** 
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Start UnitTests'
+    DECLARE @expectCountMin bigInt, @expectCountMax bigInt
+    EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
+    SET @expectCountMin = CASE WHEN @loadType = 'Delta' THEN 0 ELSE @expectCountMin END
+    SET @expectCountMax = CASE WHEN @loadType in ('Full', 'Initial') THEN 100000000 ELSE @expectCountMax END
+    EXEC reference.printLine '-- Run Actual Data UnitTests'
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Run Actual Data UnitTests'
 
-  ;WITH 
-  S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}[{{pk.name}}], {% endfor -%} '' ), 
-    dwStartDate, dwEndDate, dwIsCurrent = 0,
-    cntVersion = count(1) over (partition by {% for key in columnsPK -%}
-        [{{key.name}}], {% endfor %}dwVersion)
-    FROM [{{schemaName}}].[{{tableName}}History] UNION
-    SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, {% for pk in columnsPK %}[{{pk.name}}], {% endfor -%} '' ), 
-    dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1,
-    cntVersion = count(1) over (partition by {% for key in columnsPK -%}
-        [{{key.name}}], {% endfor %}dwVersion)
-    FROM [{{schemaName}}].[{{tableName}}]),
-  DatePeriod as (
-    SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
-    FROM s WHERE keyId != -1
-    ),
-  TESTS AS (
-    SELECT curS.id, 
-        chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
-        cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
-        chk_start_date = CASE WHEN ISNULL(dateAdd(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END,
-        chk_version = CASE WHEN ISNULL(curS.cntVersion, 1) != 1 THEN 1 ELSE 0 END
-    FROM S curS 
-    LEFT JOIN S prevS 
-        ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
-    LEFT JOIN (SELECT id, 
-        SUM(dwIsCurrent) cnt_currentFlag,
-        SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
-        FROM S GROUP BY id) chkCurFlag 
-        ON curS.id = chkCurFlag.id 
-    ),
-  Cardinality as (
-    SELECT chk_cardinality = coalesce(SUM(countRows),0) FROM (
-      SELECT d.DateAlternateKey, s.id, COUNT(*) as countRows
-      FROM s 
-      JOIN reference.Date d ON d.dateAlternateKey between dateAdd(day, -3, @dwHistoryDate) AND @dwHistoryDate
-      AND d.dateAlternateKey between s.dwStartDate and s.dwEndDate
-      GROUP BY d.DateAlternateKey, s.id
-      HAVING COUNT(*)>1 
-    ) AA
-  )
-  -- DEBUG: select all failed records
-  -- SELECT * FROM TESTS WHERE chk_currentFlag != 0 OR cnt_deleted_rows != 0 OR chk_start_date != 0     
-  SELECT 
-      @checkCurrentFlag = test.assertEqualsInt('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
-      @checkStartDate = test.assertEqualsInt('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
-      @checkVersion = test.assertEqualsInt('checkVersion (unique)', 0, sum(chk_version)),
-      @checkDeletedRows = test.assertEqualsInt('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
-      @checkCardinality = test.assertEqualsInt('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
-  FROM TESTS CROSS JOIN Cardinality
+    DECLARE @expectCount bigInt = (SELECT count(1) FROM #stage)
+    DECLARE @actualCount bigInt, @actualCountKey bigInt, @actualCountPK bigInt, @actualNullPK bigInt
+    SELECT 
+      @actualCount = isNull(SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 0 ELSE 1 END),0),
+      @actualCountKey = isNull(SUM(CASE WHEN sink.[{{skColumnName}}] = -1 THEN 1 ELSE 0 END),0),
+      @actualCountPK = COUNT(DISTINCT CASE
+        WHEN sink.[{{skColumnName}}] = -1 THEN NULL
+        ELSE concat_ws(@separator, {%- for key in columnsPK -%}
+          {%- if key.dataType in dates %} convert(nvarchar(100), sink.[{{key.name}}], 23)
+          {%- elif key.dataType in times %} convert(nvarchar(100), sink.[{{key.name}}], 114)
+          {%- elif key.dataType in datetimes %} convert(nvarchar(100), sink.[{{key.name}}], 121)
+          {%- elif key.dataType in floatNumbers %} convert(numeric(20,4), sink.[{{key.name}}])
+          {%- else %} sink.[{{key.name}}]
+          {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
+          {%- endif -%}
+          {%- endfor -%}, '') END),   
+      @actualNullPK = isNull(SUM(CASE WHEN {% for key in columnsPK -%}(sink.[{{key.name}}] is null){{-' OR ' if not loop.last -}}{%- endfor %} THEN 1 ELSE 0 END ), 0)
+    FROM [{{schemaName}}].[{{tableName}}] sink 
+    LEFT JOIN #stage src ON {% for key in columnsPK -%}sink.[{{key.name}}] = src.[{{key.name}}]{{-' AND ' if not loop.last -}}{%- endfor %}
+    WHERE (src.[{{columnsPK[0].name}}] IS NOT NULL OR sink.[{{skColumnName}}] = -1)
+      AND sink.dwIsCurrent = 'TRUE'
 
-  -- Info
-  PRINT @checkCurrentFlag
-  PRINT @checkStartDate
-  PRINT @checkVersion
-  
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
-  
-  -- Warnings
-  SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
-  SET @checkCardinality = REPLACE( @checkCardinality, 'TEST FAILED', 'WARNING!')
-  PRINT @checkDeletedRows
-  PRINT @checkCardinality
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkDeletedRows
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
+    DECLARE @checkTotalQuantity nvarchar(max) = test.assertEquals('checkTotalQuantity (source row quantity = destination)', @expectCount, @actualCount)
+    DECLARE @checkQuantityKey nvarchar(max) = test.assertEquals('checkQuantityKey (Key -1)', 1, @actualCountKey)
+    DECLARE @checkQuantityPK nvarchar(max) = test.assertEquals('checkQuantityPK (source row quantity = destination PK)', @expectCount, @actualCountPK)
+    DECLARE @checkQuantityLimit nvarchar(max) = test.assertTrue(concat('checkQuantityLimit (between ', @expectCountMin, ' - ', @expectCountMax, ' rows)'), 
+          CASE WHEN @actualCount BETWEEN @expectCountMin and @expectCountMax THEN 'TRUE' ELSE 'FALSE' END)
+    DECLARE @checkNullPK nvarchar(max) = test.assertEquals('checkNullPK (PK has NULL values)', 0, @actualNullPK)
+    SET @rowsRead = @expectCount
+    SET @rowsWritten = @actualCount
 
-  -- Raise Errors
-  IF @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
-  IF (@checkCurrentFlag like 'TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
-  IF (@checkStartDate like 'TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
-  IF (@checkVersion like 'TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
+    -- Info
+    PRINT @checkTotalQuantity
+    PRINT @checkQuantityKey
+    PRINT @checkQuantityPK
+    PRINT @checkQuantityLimit
+    
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityKey
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
 
-  -- ************ ETL code ends here ****************                
+    -- Raise Errors
+    WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
+    IF (@checkTotalQuantity like '%TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
+    IF (@checkQuantityPK like '%TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
+    IF (@checkQuantityLimit like '%TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
+    IF (@checkNullPK like '%TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
+    
+    
+    -- ************ History Data UnitTests ****************
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Run History Unit Tests'
+    EXEC reference.printLine '-- Run History Data UnitTests'        
+    DECLARE @checkCurrentFlag nvarchar(max)
+    DECLARE @checkStartDate nvarchar(max)
+    DECLARE @checkVersion nvarchar(max)
+    DECLARE @checkDeletedRows nvarchar(max)
+    DECLARE @checkCardinality nvarchar(max)
 
-  SET @sessionStatus = 'Succeeded'
-  SET @message = etl.setLogMessage('Link', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    ;WITH 
+    S as (
+      SELECT keyId = [{{skColumnName}}], id = concat_ws(@separator, {%- for key in columnsPK -%}
+        {%- if key.dataType in dates %} convert(nvarchar(100), [{{key.name}}], 23)
+        {%- elif key.dataType in times %} convert(nvarchar(100), [{{key.name}}], 114)
+        {%- elif key.dataType in datetimes %} convert(nvarchar(100), [{{key.name}}], 121)
+        {%- elif key.dataType in floatNumbers %} convert(numeric(20,4), [{{key.name}}])
+        {%- else %} [{{key.name}}]
+        {%- endif -%}{{-', ' if not loop.last -}} {% if (loop.index % 3) === 0 or loop.last %}
+        {%- endif -%}
+        {%- endfor -%}, ''), 
+      dwStartDate, dwEndDate, dwIsCurrent = cast(dwIsCurrent as int),
+      cntVersion = count(1) over (partition by {% for key in columnsPK -%}
+          [{{key.name}}], {% endfor %}dwVersion)
+      FROM [{{schemaName}}].[{{tableName}}]),
+    DatePeriod as (
+      SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
+      FROM s WHERE keyId != -1
+      ),
+    TESTS AS (
+      SELECT curS.id, 
+          chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
+          cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
+          chk_start_date = CASE WHEN ISNULL(dateAdd(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END,
+          chk_version = CASE WHEN ISNULL(curS.cntVersion, 1) != 1 THEN 1 ELSE 0 END
+      FROM S curS 
+      LEFT JOIN S prevS 
+          ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
+      LEFT JOIN (SELECT id, 
+          SUM(dwIsCurrent) cnt_currentFlag,
+          SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
+          FROM S GROUP BY id) chkCurFlag 
+          ON curS.id = chkCurFlag.id 
+      ),
+    Cardinality as (
+      SELECT chk_cardinality = coalesce(SUM(countRows),0) FROM (
+        SELECT d.DateAlternateKey, s.id, COUNT(*) as countRows
+        FROM s 
+        JOIN reference.Date d ON d.dateAlternateKey between dateAdd(day, -3, @dwHistoryDate) AND @dwHistoryDate
+        AND d.dateAlternateKey between s.dwStartDate and s.dwEndDate
+        GROUP BY d.DateAlternateKey, s.id
+        HAVING COUNT(*)>1 
+      ) AA
+    )
+    -- DEBUG: select all failed records
+    -- SELECT * FROM TESTS WHERE chk_currentFlag != 0 OR cnt_deleted_rows != 0 OR chk_start_date != 0     
+    SELECT 
+        @checkCurrentFlag = test.assertEquals('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
+        @checkStartDate = test.assertEquals('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
+        @checkVersion = test.assertEquals('checkVersion (unique)', 0, sum(chk_version)),
+        @checkDeletedRows = test.assertEquals('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
+        @checkCardinality = test.assertEquals('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
+    FROM TESTS CROSS JOIN Cardinality
 
-  -- change object status to @sessionStatus
-  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+    -- Info
+    PRINT @checkCurrentFlag
+    PRINT @checkStartDate
+    PRINT @checkVersion
+    
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
+    
+    -- Warnings
+    SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
+    SET @checkCardinality = REPLACE( @checkCardinality, 'TEST FAILED', 'WARNING!')
+    PRINT @checkDeletedRows
+    PRINT @checkCardinality
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkDeletedRows
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
 
-  IF @@trancount > 0 COMMIT TRANSACTION
-END TRY
-BEGIN CATCH
-  IF @@trancount > 0 ROLLBACK TRANSACTION
+    -- Raise Errors
+    WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
+    IF (@checkCurrentFlag like '%TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
+    IF (@checkStartDate like '%TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
+    IF (@checkVersion like '%TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
 
-  -- change object status to 'Failed'
-  SET @sessionStatus = 'Failed'
-  SET @message = reference.setLogMessage('Link', 'Execution failed', 
-              reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
-              @sessionStatus)
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    -- ************ ETL code ends here ****************                
 
-  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
-  RAISERROR (@message, 16, 1)
-END CATCH
+    SET @sessionStatus = 'Succeeded'
+    SET @message = etl.setLogMessage('Link', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+    -- change object status to @sessionStatus
+    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+    
+    WHILE @@trancount > 0 COMMIT TRANSACTION
+    UPDATE STATISTICS [{{schemaName}}].[{{tableName}}]
+  END TRY
+  BEGIN CATCH
+    WHILE @@trancount > 0 ROLLBACK TRANSACTION
+    
+    -- change object status to 'Failed'
+    SET @sessionStatus = 'Failed'
+    SET @message = reference.setLogMessage('Link', 'Execution failed', 
+                reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
+                @sessionStatus)
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+
+    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
+    RAISERROR (@message, 16, 1)
+  END CATCH
 END 
 ELSE BEGIN -- else skip this step
   SET @message = etl.setLogMessage('Link', 'Skip this step', NULL, @sessionStatus)
   EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 END
-GO
-
-
-IF OBJECT_ID ('[{{schemaName}}].[v{{tableName}}]', 'V') IS NOT NULL DROP VIEW [{{schemaName}}].[v{{tableName}}];
-GO
-
-CREATE VIEW [{{schemaName}}].[v{{tableName}}] AS 
--- ********** Project: {{ p.settings.projectName }} **********
--- Git FileName: {{ p.template.outputFileName }}
--- Combine [{{schemaName}}].[{{tableName}}] and [{{schemaName}}].[{{tableName}}History] tables 
--- and show a snapshot version of the dataset at any specific point in time.
--- To select a custom date you need to update the '$.dwCurrentDate' parameter in reference.getDomainParams()
---
--- Usage sample:
--- SELECT * FROM [{{schemaName}}].[v{{tableName}}] 
--- 
--- Author: {{ p.settings.author }}
--- Created: {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
--- Modified: {{ p.settings.authorInitials }} {{ p.template.createdAt | dateFormat('YYYY-MM-DD hh:mm:ss a') }}
---
-SELECT
-  {% for key in columns -%}
-  [{{key.name}}] = cur.[{{key.name}}],
-  {% endfor -%}
-  dwSessionNo, dwPackageName, dwIsDeleted = 0,
-  dwStartDate, dwEndDate = CAST(JSON_VALUE(params.value, '$.dwEndDate') as datetime), 
-  dwIsCurrent = cast('TRUE' as bit), dwVersion, dwUpdateDate, dwHash
-FROM [{{schemaName}}].[{{tableName}}] cur
-CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
-WHERE CAST(JSON_VALUE(params.value, '$.dwCurrentDate') as datetime) between dwStartDate and CAST(JSON_VALUE(params.value, '$.dwEndDate') as datetime)
-UNION
-SELECT
-  {% for key in columns -%}
-  [{{key.name}}] = hist.[{{key.name}}],
-  {% endfor -%}
-  dwSessionNo, dwPackageName, dwIsDeleted,
-  dwStartDate, dwEndDate, 
-  dwIsCurrent = cast('FALSE' as bit), dwVersion, dwUpdateDate, dwHash
-FROM [{{schemaName}}].[{{tableName}}History] hist
-CROSS JOIN (SELECT value = reference.getMartParams('{{spSchema}}', getUtcDate(), 'DAILY', '{{schemaName}}.v{{tableName}}')) params
-WHERE ABS(DATEDIFF(second, getUtcDate(),
-    CAST(JSON_VALUE(params.value, '$.dwCurrentDate') as datetime))) > 10
-  AND CAST(JSON_VALUE(params.value, '$.dwCurrentDate') as datetime) between dwStartDate and dwEndDate

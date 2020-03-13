@@ -37,7 +37,7 @@ AS
 -- ********** Project: {{ p.settings.projectName }} **********
 -- Git FileName: {{ p.template.outputFileName }}
 -- Source:      {%if query%}SQL query{%- else -%}[{{srcSchemaName}}].[{{srcTableName}}]{%- endif%} 
--- Destination: [{{schemaName}}].[{{tableName}}] domain reference table (SCD2) with MK factory key
+-- Destination: [{{schemaName}}].[{{tableName}}] domain master table (SCD2, MK)
 --
 -- Execution sample:
 -- EXEC [{{spSchema}}].[{{spName}}] 'adminSession', 'ETL', NULL, NULL
@@ -412,7 +412,8 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     DECLARE @expectCountMin bigInt, @expectCountMax bigInt
     EXEC etl.getRowLimit @objectCode, @expectCountMin OUT, @expectCountMax OUT
     SET @expectCountMin = CASE WHEN @loadType = 'Delta' THEN 0 ELSE @expectCountMin END
-    SET @expectCountMax = CASE WHEN @loadType in ('Full', 'Initial') THEN 100000000 ELSE @expectCountMax END\EXEC reference.printLine '-- Run Actual Data UnitTests'
+    SET @expectCountMax = CASE WHEN @loadType in ('Full', 'Initial') THEN 100000000 ELSE @expectCountMax END
+    EXEC reference.printLine '-- Run Actual Data UnitTests'
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, 'Run Actual Data UnitTests'
 
     DECLARE @expectCount bigInt = (SELECT count(1) FROM #stage)
