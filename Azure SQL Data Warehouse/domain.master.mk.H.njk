@@ -430,14 +430,14 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     -- load new records
     INSERT INTO [{{schemaName}}].[{{tableName}}History] ( 
       [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-      {% endif -%}{% endfor %} 
+      {% endif -%}{%- endfor %} 
       dwSessionNo, dwPackageName, dwIsLastVersion, dwIsDeleted, 
       dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
     SELECT
       [{{mkColumnName}}] = cur.[{{mkColumnName}}],
       {% for key in columns -%}
       [{{key.name}}] = cur.[{{key.name}}],
-      {%- endfor %}
+      {% endfor -%}
       dwSessionNo = cur.dwSessionNo,
       dwPackageName = cur.dwPackageName,
       dwIsLastVersion = 'TRUE',
@@ -587,7 +587,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         @checkCurrentFlag = test.assertEquals('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
         @checkStartDate = test.assertEquals('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
         @checkVersion = test.assertEquals('checkVersion (unique)', 0, sum(chk_version)),
-        @checkVersionSeq = test.assertEquals('checkVersionSeq (unique)', 0, sum(chk_versionSeq)),
         @checkDeletedRows = test.assertEquals('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
         @checkCardinality = test.assertTrue('checkCardinality (unique PK per each date)', cast(sum(Cardinality.chk_cardinality) as bit)^1)
     FROM TESTS CROSS JOIN Cardinality
@@ -600,7 +599,6 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
     EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
-    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersionSeq
     
     -- Warnings
     SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
