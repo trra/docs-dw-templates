@@ -429,8 +429,9 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     EXEC reference.printLine '-- Insert into [{{schemaName}}].[{{tableName}}History]'
     -- load new records
     INSERT INTO [{{schemaName}}].[{{tableName}}History] ( 
-      [{{mkColumnName}}], {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-      {% endif -%}{%- endfor %} 
+      [{{mkColumnName}}], 
+      {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
+      {% endif -%}{% endfor -%} 
       dwSessionNo, dwPackageName, dwIsLastVersion, dwIsDeleted, 
       dwStartDate, dwEndDate, dwVersion, dwUpdateDate, dwHash)
     SELECT
