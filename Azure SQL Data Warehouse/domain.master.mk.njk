@@ -302,7 +302,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       
     IF (@loadType = 'full') 
     BEGIN
-      EXEC reference.printLine '-- Full Load: set dwIsDeleted flag for deleted rows'
+    EXEC reference.printLine '-- Full Load: set dwIsDeleted flag for deleted rows'
       -- load new records
       INSERT INTO #upsert (
         [{{skColumnName}}], [{{mkColumnName}}], 
