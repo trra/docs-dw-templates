@@ -184,12 +184,11 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       SET IDENTITY_INSERT [{{schemaName}}].[{{tableName}}] OFF
     END
 
-    {% if query %}
+    {% if query -%}
     EXEC reference.printLine '-- Create #src'
     IF OBJECT_ID('tempdb..#src') IS NOT NULL DROP TABLE #src
     CREATE TABLE #src WITH (DISTRIBUTION = ROUND_ROBIN, HEAP) AS 
-    {{query | safe | indent(4) }}
-    {% endif %}
+    {{query | safe | indent(4) }}{%- endif %}
 
     EXEC reference.printLine '-- Create #businessKeys'
     -- Create #businessKeys temp table to generate master keys in MK Factory
@@ -332,7 +331,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       INSERT INTO #upsert (
         [{{skColumnName}}], [{{mkColumnName}}], 
         {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-        {% endif -%}{%- endfor %}
+        {% endif -%}{% endfor -%}
         dwRowChangeType, dwHash, dwLastVersion 
         )
       SELECT DISTINCT
@@ -382,8 +381,8 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
         {% endfor -%}
         dwSessionNo = sink.dwSessionNo,
         dwPackageName = sink.dwPackageName,
-        dwStartDate = sink.dwStartDate,
         dwIsDeleted = cast('FALSE' as bit),
+        dwStartDate = sink.dwStartDate,
         dwVersion = sink.dwVersion,
         dwUpdateDate = sink.dwUpdateDate,
         dwHash = sink.dwHash
@@ -421,10 +420,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     IF @@trancount = 0 BEGIN TRANSACTION
     EXEC reference.printLine '-- Modify [{{schemaName}}].[{{tableName}}History] updated and deleted rows'
     UPDATE [{{schemaName}}].[{{tableName}}History] 
-    SET 
-      dwIsLastVersion = 'FALSE',
-      dwIsDeleted = CASE WHEN src.dwRowChangeType = 'Delete' THEN 'TRUE' ELSE 'FALSE' END,
-      dwEndDate = dateAdd(s, -1, @dwHistoryDate)
+    SET dwIsLastVersion = 'FALSE'
     FROM #upsert src 
     WHERE [{{schemaName}}].[{{tableName}}History].[{{mkColumnName}}] = src.[{{mkColumnName}}]
     AND src.dwRowChangeType in ('Update', 'Delete') 
@@ -441,7 +437,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       [{{mkColumnName}}] = cur.[{{mkColumnName}}],
       {% for key in columns -%}
       [{{key.name}}] = cur.[{{key.name}}],
-      {% endfor -%}
+      {%- endfor %}
       dwSessionNo = cur.dwSessionNo,
       dwPackageName = cur.dwPackageName,
       dwIsLastVersion = 'TRUE',
@@ -460,7 +456,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
       [{{mkColumnName}}], 
       {% for key in columns -%}[{{key.name}}], {% if (loop.index % 3) === 0 or loop.last %}
-      {% endif -%}{%- endfor %} 
+      {% endif -%}{% endfor -%} 
       dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash
       )
     SELECT
@@ -518,137 +514,133 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
     SET @rowsRead = @expectCount
     SET @rowsWritten = @actualCount
 
-  -- Info
-  PRINT @checkTotalQuantity
-  PRINT @checkQuantityKey
-  PRINT @checkQuantityPK
-  PRINT @checkQuantityLimit
-  
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityKey
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
+    -- Info
+    PRINT @checkTotalQuantity
+    PRINT @checkQuantityKey
+    PRINT @checkQuantityPK
+    PRINT @checkQuantityLimit
+    
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkTotalQuantity
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityKey
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityPK
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkQuantityLimit
 
-  -- Raise Errors
-  WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
-  IF (@checkTotalQuantity like '%TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
-  IF (@checkQuantityPK like '%TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
-  IF (@checkQuantityLimit like '%TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
-  IF (@checkNullPK like '%TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
-  
-  
-  -- ************ History Data UnitTests ****************
-  EXEC reference.printLine '-- Run History Data UnitTests'        
-  DECLARE @checkCurrentFlag nvarchar(max)
-  DECLARE @checkStartDate nvarchar(max)
-  DECLARE @checkVersion nvarchar(max)
-  DECLARE @checkVersionSeq nvarchar(max)
-  DECLARE @checkDeletedRows nvarchar(max)
-  DECLARE @checkCardinality nvarchar(max)
+    -- Raise Errors
+    WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
+    IF (@checkTotalQuantity like '%TEST FAILED%') RAISERROR (@checkTotalQuantity, 16, 1)
+    IF (@checkQuantityPK like '%TEST FAILED%') RAISERROR (@checkQuantityPK, 16, 1)
+    IF (@checkQuantityLimit like '%TEST FAILED%') RAISERROR (@checkQuantityLimit, 16, 1)
+    IF (@checkNullPK like '%TEST FAILED%') RAISERROR (@checkNullPK, 16, 1)
+    
+    -- ************ History Data UnitTests ****************
+    EXEC reference.printLine '-- Run History Data UnitTests'        
+    DECLARE @checkCurrentFlag nvarchar(max)
+    DECLARE @checkStartDate nvarchar(max)
+    DECLARE @checkVersion nvarchar(max)
+    DECLARE @checkDeletedRows nvarchar(max)
+    DECLARE @checkCardinality nvarchar(max)
 
-  ;WITH 
-  S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
-    dwStartDate, dwEndDate, dwIsCurrent = 0, dwVersion,
-    cntVersion = count(1) over (partition by {% for key in columnsPK -%}
+    -- DEBUG: DECLARE @separator nvarchar(1) = '~', @dwHistoryDate date = getdate(), @dwEndDate date = '9999-12-01'
+    ;WITH 
+    S as (SELECT keyId = concat('H',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
+      dwStartDate, dwEndDate, dwIsCurrent = 0, dwVersion,
+      cntVersion = count(1) over (partition by {% for key in columnsPK -%}
+          [{{key.name}}], {% endfor %}dwVersion)
+      FROM [{{schemaName}}].[{{tableName}}History] UNION
+      SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
+      dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1, dwVersion,
+      cntVersion = count(1) over (partition by {% for key in columnsPK -%}
         [{{key.name}}], {% endfor %}dwVersion)
-    FROM [{{schemaName}}].[{{tableName}}History] UNION
-    SELECT keyId = concat('C',[{{skColumnName}}]), id = concat_ws(@separator, [{{mkColumnName}}], '' ), 
-    dwStartDate, dwEndDate = @dwEndDate, dwIsCurrent = 1, dwVersion,
-    cntVersion = count(1) over (partition by {% for key in columnsPK -%}
-      [{{key.name}}], {% endfor %}dwVersion)
-    FROM [{{schemaName}}].[{{tableName}}]),
-  DatePeriod as (
-    SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
-    FROM s WHERE keyId != -1
-    ),
-  TESTS AS (
-    SELECT curS.id, 
-        chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
-        cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
-        chk_start_date = CASE WHEN ISNULL(dateAdd(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END,
-        chk_version = CASE WHEN ISNULL(curS.cntVersion, 1) != 1 THEN 1 ELSE 0 END,
-        chk_versionSeq = CASE WHEN ISNULL(prevS.dwVersion, 0) + 1 != ISNULL(curS.dwVersion, 1) THEN 1 ELSE 0 END
-    FROM S curS 
-    LEFT JOIN S prevS 
-        ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
-    LEFT JOIN (SELECT id, 
-        SUM(dwIsCurrent) cnt_currentFlag,
-        SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
-        FROM S GROUP BY id) chkCurFlag 
-        ON curS.id = chkCurFlag.id 
-    ),
-  Cardinality as (
-    SELECT chk_cardinality = coalesce(SUM(countRows),0) FROM (
-      SELECT d.DateAlternateKey, s.id, COUNT(*) as countRows
-      FROM s 
-      JOIN reference.Date d ON d.dateAlternateKey between dateAdd(day, -3, @dwHistoryDate) AND @dwHistoryDate
-      AND d.dateAlternateKey between s.dwStartDate and s.dwEndDate
-      GROUP BY d.DateAlternateKey, s.id
-      HAVING COUNT(*)>1 
-    ) AA
-  )
-  -- DEBUG: select all failed records
-  -- SELECT * FROM TESTS WHERE chk_currentFlag != 0 OR cnt_deleted_rows != 0 OR chk_start_date != 0     
-  SELECT 
-      @checkCurrentFlag = test.assertEquals('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
-      @checkStartDate = test.assertEquals('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
-      @checkVersion = test.assertEquals('checkVersion (unique)', 0, sum(chk_version)),
-      @checkVersionSeq = test.assertEquals('checkVersionSeq (unique)', 0, sum(chk_versionSeq)),
-      @checkDeletedRows = test.assertEquals('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
-      @checkCardinality = test.assertEquals('checkCardinality (unique PK per each date)', 0, sum(Cardinality.chk_cardinality))
-  FROM TESTS CROSS JOIN Cardinality
+      FROM [{{schemaName}}].[{{tableName}}]),
+    DatePeriod as (
+      SELECT fromDate = min(dwStartDate), toDate = max(dwStartDate), totalRows = count(*)
+      FROM s WHERE keyId != -1
+      ),
+    TESTS AS (
+      SELECT curS.id, 
+          chk_currentFlag = CASE WHEN ISNULL(chkCurFlag.cnt_currentFlag, 0) > 1 THEN 1 ELSE 0 END,
+          cnt_deleted_rows = CASE WHEN (chkCurFlag.cnt_currentFlag = 0 AND cnt_currentPeriod = 0) THEN 1 ELSE 0 END, 
+          chk_start_date = CASE WHEN ISNULL(dateAdd(s, 1, prevS.dwEndDate), curS.dwStartDate) = curS.dwStartDate THEN 0 ELSE 1 END,
+          chk_version = CASE WHEN ISNULL(curS.cntVersion, 1) != 1 THEN 1 ELSE 0 END
+      FROM S curS 
+      LEFT JOIN S prevS 
+          ON prevS.id = curS.id AND (dateAdd(s, -1, curS.dwStartDate) BETWEEN prevS.dwStartDate AND prevS.dwEndDate)
+      LEFT JOIN (SELECT id, 
+          SUM(dwIsCurrent) cnt_currentFlag,
+          SUM(CASE WHEN (@dwHistoryDate BETWEEN dwStartDate AND dwEndDate) THEN 1 ELSE 0 END) cnt_currentPeriod
+          FROM S GROUP BY id) chkCurFlag 
+          ON curS.id = chkCurFlag.id 
+      ),
+    Cardinality as (
+      SELECT chk_cardinality = CASE WHEN coalesce(SUM(countRows), 0) = coalesce(SUM(cntVersion), 0) THEN 0 ELSE 1 END
+      FROM (
+        SELECT d.DateAlternateKey, s.id, COUNT(*) as countRows, COUNT(DISTINCT dwVersion) as cntVersion
+        FROM s 
+        JOIN reference.Date d ON d.dateAlternateKey between dateAdd(day, -3, @dwHistoryDate) AND @dwHistoryDate
+        AND d.dateAlternateKey between s.dwStartDate and s.dwEndDate
+        GROUP BY d.DateAlternateKey, s.id
+      ) AA
+    )
+    -- DEBUG: select all failed records
+    -- SELECT * FROM TESTS CROSS JOIN Cardinality WHERE chk_currentFlag != 0 OR cnt_deleted_rows != 0 OR chk_start_date != 0     
+    SELECT 
+        @checkCurrentFlag = test.assertEquals('checkCurrentFlag (0/1 rows per each PK)', 0, sum(chk_currentFlag)),
+        @checkStartDate = test.assertEquals('checkStartDate (previous end date = current start date)', 0, sum(chk_start_date)),
+        @checkVersion = test.assertEquals('checkVersion (unique)', 0, sum(chk_version)),
+        @checkVersionSeq = test.assertEquals('checkVersionSeq (unique)', 0, sum(chk_versionSeq)),
+        @checkDeletedRows = test.assertEquals('checkDeletedRows (count all history lines)', 0, sum(cnt_deleted_rows)),
+        @checkCardinality = test.assertTrue('checkCardinality (unique PK per each date)', cast(sum(Cardinality.chk_cardinality) as bit)^1)
+    FROM TESTS CROSS JOIN Cardinality
 
-  -- Info
-  PRINT @checkCurrentFlag
-  PRINT @checkStartDate
-  PRINT @checkVersion
-  PRINT @checkVersionSeq
-  
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersionSeq
-  
-  -- Warnings
-  SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
-  SET @checkCardinality = REPLACE( @checkCardinality, 'TEST FAILED', 'WARNING!')
-  PRINT @checkDeletedRows
-  PRINT @checkCardinality
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkDeletedRows
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
+    -- Info
+    PRINT @checkCurrentFlag
+    PRINT @checkStartDate
+    PRINT @checkVersion
+    
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCurrentFlag
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkStartDate
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersion
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkVersionSeq
+    
+    -- Warnings
+    SET @checkDeletedRows = REPLACE( @checkDeletedRows, 'TEST FAILED', 'WARNING!')
+    SET @checkCardinality = REPLACE( @checkCardinality, 'TEST FAILED', 'WARNING!')
+    PRINT @checkDeletedRows
+    PRINT @checkCardinality
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkDeletedRows
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @checkCardinality
 
-  -- Raise Errors
-  WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
-  IF (@checkCurrentFlag like '%TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
-  IF (@checkStartDate like '%TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
-  IF (@checkVersion like '%TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
-  IF (@checkVersionSeq like '%TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
+    -- Raise Errors
+    WHILE @@trancount>0 AND @sessionNo = 'testSession' COMMIT TRANSACTION
+    IF (@checkCurrentFlag like '%TEST FAILED%') RAISERROR (@checkCurrentFlag, 16, 1)
+    IF (@checkStartDate like '%TEST FAILED%') RAISERROR (@checkStartDate, 16, 1)
+    IF (@checkVersion like '%TEST FAILED%') RAISERROR (@checkVersion, 16, 1)
 
-  -- ************ ETL code ends here ****************                
+    -- ************ ETL code ends here ****************                
 
-  SET @sessionStatus = 'Succeeded'
-  SET @message = etl.setLogMessage('MasterData', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    SET @sessionStatus = 'Succeeded'
+    SET @message = etl.setLogMessage('MasterData', 'Transformation complete', REPLACE(REPLACE('"output":{"rowsRead":{0}, "rowsWritten":{1}}','{0}', @rowsRead),'{1}', @rowsWritten), @sessionStatus)
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 
-  -- change object status to @sessionStatus
-  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
-  
-  WHILE @@trancount > 0 COMMIT TRANSACTION
-  UPDATE STATISTICS [{{schemaName}}].[{{tableName}}]
-END TRY
-BEGIN CATCH
-  WHILE @@trancount > 0 ROLLBACK TRANSACTION
-  
-  -- change object status to 'Failed'
-  SET @sessionStatus = 'Failed'
-  SET @message = reference.setLogMessage('MasterData', 'Execution failed', 
-              reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
-              @sessionStatus)
-  EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
+    -- change object status to @sessionStatus
+    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = @rowsWritten
+    
+    WHILE @@trancount > 0 COMMIT TRANSACTION
+    UPDATE STATISTICS [{{schemaName}}].[{{tableName}}]
+  END TRY
+  BEGIN CATCH
+    WHILE @@trancount > 0 ROLLBACK TRANSACTION
+    
+    -- change object status to 'Failed'
+    SET @sessionStatus = 'Failed'
+    SET @message = reference.setLogMessage('MasterData', 'Execution failed', 
+                reference.setErrorMessage( ERROR_NUMBER(), ERROR_STATE(), ERROR_PROCEDURE(), ERROR_MESSAGE() ),
+                @sessionStatus)
+    EXEC [etl].[addSessionLog] @sessionNo, @packageName, @objectCode, @procName, @message
 
-  EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
-  RAISERROR (@message, 16, 1)
-END CATCH
+    EXEC [etl].[setSessionStatus] @sessionNo, @packageName, @objectCode, @status = @sessionStatus, @countRows = NULL
+    RAISERROR (@message, 16, 1)
+  END CATCH
 END 
 ELSE BEGIN -- else skip this step
   SET @message = etl.setLogMessage('MasterData', 'Skip this step', NULL, @sessionStatus)
