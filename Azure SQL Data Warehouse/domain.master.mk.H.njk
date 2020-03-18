@@ -162,7 +162,7 @@ IF @sessionStatus in ('Ready', 'Failed') BEGIN
       INSERT INTO [{{schemaName}}].[{{tableName}}] ( 
         [{{skColumnName}}], [{{mkColumnName}}],
         {% for key in columns -%}[{{key.name}}], {% if (loop.index % 4) === 0 or loop.last %}
-        {% endif -%}{%- endfor %}
+        {% endif -%}{% endfor -%}
         dwSessionNo, dwPackageName, dwStartDate, dwVersion, dwUpdateDate, dwHash )
       SELECT 
         [{{skColumnName}}] = -1,
